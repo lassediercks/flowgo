@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.6](https://github.com/lassediercks/flowgo/compare/0.0.5...0.0.6) (2026-04-30)
+
+
+### Features
+
+* introduce mcp ([9a51504](https://github.com/lassediercks/flowgo/commit/9a51504d6327413597c1bb5e4b5429afbc32af56))
+
 ## [0.0.5](https://github.com/lassediercks/flowgo/compare/0.0.4...0.0.5) (2026-04-30)
 
 
