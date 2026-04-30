@@ -11,7 +11,6 @@
     padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
   }
   #toolbar button { margin-right: 6px; }
-  #toolbar button.active { background: #07f; color: #fff; border-color: #07f; }
   #status { position: fixed; bottom: 8px; left: 8px; color: #666; font-size: 12px; }
   #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
   #path .seg { cursor: pointer; }
@@ -28,7 +27,6 @@
     background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
     background-position: 0 0;
   }
-  body.connect #canvas { cursor: crosshair; }
   .box {
     position: absolute; min-width: 80px; padding: 8px 12px;
     background: #fff; border: 2px solid #333; border-radius: 6px;
@@ -38,11 +36,9 @@
     text-align: center;
   }
   .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
-  .box.connect-source { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.25); }
   .box.selected { border-color: #07f; }
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
-  body.connect .box { cursor: crosshair; }
 
   .handle {
     position: absolute; width: 12px; height: 12px;
@@ -124,7 +120,6 @@
 <div id="toolbar">
   <button id="upBtn">↑ Up</button>
   <button id="addBtn">+ Box</button>
-  <button id="connectBtn">Connect</button>
   <button id="deleteBtn">Delete</button>
   <span id="path"></span>
 </div>
@@ -153,8 +148,8 @@
     <h3>Connections</h3>
     <table>
       <tr><td>Drag a blue dot to another box</td><td>Create a connection between the two boxes</td></tr>
+      <tr><td>Drag a blue dot onto an existing connected handle</td><td>Re-route the existing connection</td></tr>
       <tr><td>Drag a blue dot into empty space</td><td>Spawn a new box at the cursor and connect to it</td></tr>
-      <tr><td><kbd>Connect</kbd> button → click two boxes</td><td>Create a connection (auto-picks the nearest handles)</td></tr>
       <tr><td>Click an edge</td><td>Select it (turns blue + thicker)</td></tr>
       <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd> on edge</td><td>Remove the edge</td></tr>
       <tr><td>(creating a new edge)</td><td>Replaces any prior edge between the same pair (undirected)</td></tr>
@@ -184,7 +179,7 @@
 
     <h3>Other</h3>
     <table>
-      <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel connect mode · cancel link drag · clear selection</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel link drag · clear selection · cancel a freshly spawned box</td></tr>
       <tr><td><kbd>?</kbd> button (top right)</td><td>Open / close this help</td></tr>
       <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
     </table>
@@ -219,8 +214,6 @@ let undoStack = [];
 let redoStack = [];
 const UNDO_LIMIT = 100;
 let selectedEdge = null; // reference to an entry in state.edges
-let connectFrom = null;
-let mode = "normal";
 let saveTimer = null;
 let drag = null;       // box drag
 let link = null;       // link drag from a handle
@@ -233,7 +226,6 @@ const svg = document.getElementById("edges");
 const edgeLayer = document.getElementById("edge-layer");
 const ghostLine = document.getElementById("ghost-line");
 const statusEl = document.getElementById("status");
-const connectBtn = document.getElementById("connectBtn");
 
 const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
 
@@ -275,7 +267,6 @@ function setCurrentPath(p) {
   state = ensureMap(p);
   selected.clear();
   selectedEdge = null;
-  if (mode === "connect") setMode("normal");
   renderAll();
   renderPath();
 }
@@ -413,7 +404,6 @@ function renderAll() {
 function applyClasses() {
   for (const el of canvas.querySelectorAll(".box")) {
     el.classList.toggle("selected", selected.has(el.dataset.id));
-    el.classList.toggle("connect-source", el.dataset.id === connectFrom);
     el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
     el.classList.toggle("proximity-target", el.dataset.id === nearTargetId);
   }
@@ -747,15 +737,11 @@ document.addEventListener("mouseup", (e) => {
     if (wasActive) {
       scheduleSave();
     } else {
-      if (mode === "connect") {
-        handleConnectClick(primary);
-      } else {
-        // single-click without movement: collapse selection to this one box (no edit).
-        selected.clear();
-        selected.add(primary.id);
-        if (selectedEdge) { selectedEdge = null; renderEdges(); }
-        applyClasses();
-      }
+      // single-click without movement: collapse selection to this one box (no edit).
+      selected.clear();
+      selected.add(primary.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
     }
     return;
   }
@@ -843,34 +829,6 @@ function findBoxAt(x, y) {
   return null;
 }
 
-function handleConnectClick(b) {
-  if (connectFrom == null) {
-    connectFrom = b.id;
-    setStatus("source: " + b.label + " — click target");
-    applyClasses();
-    return;
-  }
-  if (connectFrom === b.id) {
-    connectFrom = null;
-    setStatus("connect: click source");
-    applyClasses();
-    return;
-  }
-  const a = state.boxes.find(x => x.id === connectFrom);
-  const ea = canvas.querySelector(`.box[data-id="${a.id}"]`);
-  const eb = canvas.querySelector(`.box[data-id="${b.id}"]`);
-  const acx = a.x + ea.offsetWidth / 2, acy = a.y + ea.offsetHeight / 2;
-  const bcx = b.x + eb.offsetWidth / 2, bcy = b.y + eb.offsetHeight / 2;
-  const fromCode = nearestHandle(a, ea, bcx, bcy);
-  const toCode = nearestHandle(b, eb, acx, acy);
-  addOrReplaceEdge({ from: connectFrom, fromHandle: fromCode, to: b.id, toHandle: toCode });
-  scheduleSave();
-  connectFrom = null;
-  setStatus("edge added — click another source or press Connect to exit");
-  applyClasses();
-  renderEdges();
-}
-
 function startEdit(el, b, opts) {
   if (editing) return;
   editing = el;
@@ -932,15 +890,6 @@ function startEdit(el, b, opts) {
   el.addEventListener("keydown", onKey);
 }
 
-function setMode(m) {
-  mode = m;
-  connectFrom = null;
-  document.body.classList.toggle("connect", m === "connect");
-  connectBtn.classList.toggle("active", m === "connect");
-  setStatus(m === "connect" ? "connect: click source, then target" : "");
-  applyClasses();
-}
-
 function createBoxAt(x, y, centerOn) {
   const id = uid();
   const b = { id, label: "new", x, y };
@@ -970,10 +919,6 @@ document.getElementById("addBtn").addEventListener("click", () => {
 canvas.addEventListener("dblclick", (e) => {
   if (e.target !== canvas) return;
   createBoxAt(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
-});
-
-connectBtn.addEventListener("click", () => {
-  setMode(mode === "connect" ? "normal" : "connect");
 });
 
 document.getElementById("deleteBtn").addEventListener("click", () => {
@@ -1027,7 +972,6 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
-    if (mode === "connect") setMode("normal");
     selected.clear();
     selectedEdge = null;
     applyClasses();
@@ -1054,7 +998,6 @@ document.addEventListener("keydown", (e) => {
 canvas.addEventListener("mousedown", (e) => {
   if (e.target !== canvas) return;
   if (e.button !== 0) return;
-  if (mode === "connect") return;
   if (!e.shiftKey) selected.clear();
   if (selectedEdge) { selectedEdge = null; renderEdges(); }
   applyClasses();

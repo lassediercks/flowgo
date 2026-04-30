@@ -49,8 +49,8 @@ and tries to open your browser. If the file doesn't exist it's created empty.
 | ⌥-drag a box body                          | Duplicate the selection and drag the copies  |
 | Drag on empty canvas                       | Rubber-band select boxes; Shift to add       |
 | Drag a blue dot to another box / handle   | Create a connection (replaces any prior one) |
+| Drag a blue dot onto an existing handle    | Re-route the existing connection             |
 | Drag a blue dot into empty space           | Spawn a new box and connect to it            |
-| `Connect` button → click source, target    | Create a connection (auto-picks handles)     |
 | Click an edge                              | Select it (turns blue + thicker)             |
 | `Delete` / `Backspace`                     | Remove all selected boxes / the selected edge|
 | Middle-click or ⌘-click a box              | Enter its submap                             |
