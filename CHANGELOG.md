@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.7](https://github.com/lassediercks/flowgo/compare/0.0.6...0.0.7) (2026-04-30)
+
+
+### Bug Fixes
+
+* usability improvements ([c4f755c](https://github.com/lassediercks/flowgo/commit/c4f755ce9417e9b29664596645ff2fab54b1f6b9))
+
 ## [0.0.6](https://github.com/lassediercks/flowgo/compare/0.0.5...0.0.6) (2026-04-30)
 
 
