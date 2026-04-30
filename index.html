@@ -110,6 +110,7 @@
     position: fixed; z-index: 6; pointer-events: none;
     border: 1px dashed #07f; background: rgba(0,119,255,.08);
   }
+  body.panning, body.panning * { cursor: grabbing !important; }
 
   #helpBtn {
     position: fixed; top: 8px; right: 8px; z-index: 11;
@@ -237,6 +238,12 @@
       <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo (alternate)</td></tr>
     </table>
 
+    <h3>View</h3>
+    <table>
+      <tr><td>Right-click + drag</td><td>Pan the viewport</td></tr>
+      <tr><td>Resize the window</td><td>Auto-recenters the current map</td></tr>
+    </table>
+
     <h3>Other</h3>
     <table>
       <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel link drag · clear selection · cancel a freshly spawned box</td></tr>
@@ -272,6 +279,46 @@ let selected = new Set();
 let band = null; // rubber-band selection state
 let lastCursor = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 let lastCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+const viewport = { x: 0, y: 0 };
+let pan = null;
+
+function applyViewport() {
+  const tx = viewport.x, ty = viewport.y;
+  canvas.style.transform = `translate(${tx}px, ${ty}px)`;
+  document.getElementById("line-layer").setAttribute("transform", `translate(${tx} ${ty})`);
+  document.getElementById("edge-layer").setAttribute("transform", `translate(${tx} ${ty})`);
+  ghostLine.setAttribute("transform", `translate(${tx} ${ty})`);
+  document.getElementById("bg-layer").style.backgroundPosition = `${tx}px ${ty}px`;
+}
+
+function toDataX(c) { return c - viewport.x; }
+function toDataY(c) { return c - viewport.y; }
+
+function recenter() {
+  const points = [];
+  for (const b of state.boxes) points.push([b.x, b.y]);
+  for (const t of state.texts) points.push([t.x, t.y]);
+  for (const l of state.lines) {
+    points.push([l.x1, l.y1]);
+    points.push([l.x2, l.y2]);
+  }
+  if (points.length === 0) {
+    viewport.x = 0; viewport.y = 0;
+  } else {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of points) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    viewport.x = window.innerWidth / 2 - cx;
+    viewport.y = window.innerHeight / 2 - cy;
+  }
+  applyViewport();
+}
 let savedSnapshot = null;
 let undoStack = [];
 let redoStack = [];
@@ -349,6 +396,7 @@ function setCurrentPath(p) {
   selectedEdge = null;
   renderAll();
   renderPath();
+  recenter();
 }
 
 function renderPath() {
@@ -994,8 +1042,8 @@ function attachBoxHandlers(el, b) {
         e.target.classList.add("active");
         ghostLine.setAttribute("x1", hx);
         ghostLine.setAttribute("y1", hy);
-        ghostLine.setAttribute("x2", e.clientX);
-        ghostLine.setAttribute("y2", e.clientY);
+        ghostLine.setAttribute("x2", toDataX(e.clientX));
+        ghostLine.setAttribute("y2", toDataY(e.clientY));
         ghostLine.style.display = "";
         renderEdges();
         setStatus("re-routing edge — drop on a box, or in empty space");
@@ -1013,8 +1061,8 @@ function attachBoxHandlers(el, b) {
       e.target.classList.add("active");
       ghostLine.setAttribute("x1", hx);
       ghostLine.setAttribute("y1", hy);
-      ghostLine.setAttribute("x2", e.clientX);
-      ghostLine.setAttribute("y2", e.clientY);
+      ghostLine.setAttribute("x2", toDataX(e.clientX));
+      ghostLine.setAttribute("y2", toDataY(e.clientY));
       ghostLine.style.display = "";
       setStatus("drop on a box to connect, or release to cancel");
       return;
@@ -1061,6 +1109,12 @@ function attachBoxHandlers(el, b) {
 document.addEventListener("mousemove", (e) => {
   lastCursor.x = e.clientX;
   lastCursor.y = e.clientY;
+  if (pan) {
+    viewport.x = pan.startVX + (e.clientX - pan.downX);
+    viewport.y = pan.startVY + (e.clientY - pan.downY);
+    applyViewport();
+    return;
+  }
   if (drag) {
     const dx = e.clientX - drag.downX;
     const dy = e.clientY - drag.downY;
@@ -1094,11 +1148,16 @@ document.addEventListener("mousemove", (e) => {
       dropTargetId = id;
       applyClasses();
     }
-    updateProximity(e.clientX, e.clientY);
+    updateProximity(toDataX(e.clientX), toDataY(e.clientY));
   }
 });
 
 document.addEventListener("mouseup", (e) => {
+  if (pan) {
+    pan = null;
+    document.body.classList.remove("panning");
+    return;
+  }
   if (drag) {
     const wasActive = drag.active;
     for (const m of drag.movers) if (m.el && m.el.classList) m.el.classList.remove("dragging");
@@ -1116,11 +1175,14 @@ document.addEventListener("mouseup", (e) => {
     return;
   }
   if (band) {
-    const x1 = Math.min(band.startX, e.clientX);
-    const y1 = Math.min(band.startY, e.clientY);
-    const x2 = Math.max(band.startX, e.clientX);
-    const y2 = Math.max(band.startY, e.clientY);
-    if (x2 - x1 > 2 || y2 - y1 > 2) {
+    const cX1 = Math.min(band.startX, e.clientX);
+    const cY1 = Math.min(band.startY, e.clientY);
+    const cX2 = Math.max(band.startX, e.clientX);
+    const cY2 = Math.max(band.startY, e.clientY);
+    if (cX2 - cX1 > 2 || cY2 - cY1 > 2) {
+      // Convert band rect from client to data coords for comparison with stored positions.
+      const x1 = toDataX(cX1), y1 = toDataY(cY1);
+      const x2 = toDataX(cX2), y2 = toDataY(cY2);
       for (const b of state.boxes) {
         const el = canvas.querySelector(`.box[data-id="${b.id}"]`);
         if (!el) continue;
@@ -1181,14 +1243,14 @@ document.addEventListener("mouseup", (e) => {
     } else {
       // Dropped in empty space: spawn a new box at the cursor and connect to it.
       const newId = uid();
-      const provisionalX = e.clientX, provisionalY = e.clientY;
-      const newBox = { id: newId, label: "new", x: provisionalX, y: provisionalY };
+      const dropX = toDataX(e.clientX), dropY = toDataY(e.clientY);
+      const newBox = { id: newId, label: "new", x: dropX, y: dropY };
       state.boxes.push(newBox);
       renderAll();
       const newEl = canvas.querySelector(`.box[data-id="${newId}"]`);
       if (newEl) {
-        newBox.x = e.clientX - newEl.offsetWidth / 2;
-        newBox.y = e.clientY - newEl.offsetHeight / 2;
+        newBox.x = dropX - newEl.offsetWidth / 2;
+        newBox.y = dropY - newEl.offsetHeight / 2;
         newEl.style.left = newBox.x + "px";
         newEl.style.top = newBox.y + "px";
         const toCode = nearestHandle(newBox, newEl, link.startX, link.startY);
@@ -1337,7 +1399,8 @@ document.getElementById("addBtn").addEventListener("click", () => {
 });
 
 document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
-  createBoxAt(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
+  const dx = toDataX(e.clientX), dy = toDataY(e.clientY);
+  createBoxAt(dx, dy, { x: dx, y: dy });
 });
 
 document.getElementById("deleteBtn").addEventListener("click", () => {
@@ -1374,6 +1437,18 @@ helpOverlay.addEventListener("mousedown", (e) => {
 window.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
 window.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); }, true);
 
+// Right-click drag pans the viewport.
+window.addEventListener("contextmenu", (e) => { e.preventDefault(); });
+document.addEventListener("mousedown", (e) => {
+  if (e.button !== 2) return;
+  e.preventDefault();
+  pan = {
+    downX: e.clientX, downY: e.clientY,
+    startVX: viewport.x, startVY: viewport.y,
+  };
+  document.body.classList.add("panning");
+});
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !helpOverlay.classList.contains("hidden")) {
     setHelpOpen(false);
@@ -1394,12 +1469,12 @@ document.addEventListener("keydown", (e) => {
   }
   if (!mod && !e.altKey && (e.key === "t" || e.key === "T")) {
     e.preventDefault();
-    createTextAt(lastCursor.x, lastCursor.y);
+    createTextAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
     return;
   }
   if (!mod && !e.altKey && (e.key === "l" || e.key === "L")) {
     e.preventDefault();
-    createLineAt(lastCursor.x, lastCursor.y);
+    createLineAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
     return;
   }
   if (e.key === "Escape") {
@@ -1442,26 +1517,10 @@ document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   band = { startX: e.clientX, startY: e.clientY, el: bandEl };
 });
 
-// On window resize, shift every item across every map by the change in viewport
-// center so the content stays anchored to the middle of the window.
+// On window resize, recenter the map under the new viewport size — viewport-only,
+// no data mutation, so the file isn't dirtied.
 window.addEventListener("resize", () => {
-  const cx = window.innerWidth / 2;
-  const cy = window.innerHeight / 2;
-  const dx = cx - lastCenter.x;
-  const dy = cy - lastCenter.y;
-  lastCenter = { x: cx, y: cy };
-  if (dx === 0 && dy === 0) return;
-  if (!graph || !graph.maps) return;
-  for (const m of graph.maps) {
-    for (const b of (m.boxes || [])) { b.x += dx; b.y += dy; }
-    for (const t of (m.texts || [])) { t.x += dx; t.y += dy; }
-    for (const l of (m.lines || [])) {
-      l.x1 += dx; l.y1 += dy;
-      l.x2 += dx; l.y2 += dy;
-    }
-  }
-  renderAll();
-  scheduleSave();
+  recenter();
 });
 
 load();
