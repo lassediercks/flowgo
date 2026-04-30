@@ -1,11 +1,21 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "go",
+  "include-v-in-tag": false,
   "include-component-in-tag": false,
-  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "changelog-sections": [
+    {"type": "feat",     "section": "Features"},
+    {"type": "fix",      "section": "Bug Fixes"},
+    {"type": "refactor", "section": "Refactoring", "hidden": false},
+    {"type": "perf",     "section": "Performance"},
+    {"type": "deps",     "section": "Dependencies"}
+  ],
   "packages": {
     ".": {
-      "package-name": "flowgo"
+      "release-type": "go",
+      "package-name": "flowgo",
+      "initial-version": "0.0.1"
     }
   }
 }

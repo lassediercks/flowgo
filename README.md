@@ -110,6 +110,13 @@ Merging that PR tags a new version, creates a GitHub release, and attaches
 prebuilt binaries for `linux/{amd64,arm64}`, `darwin/{amd64,arm64}`, and
 `windows/amd64`.
 
+Versioning policy (configured in `release-please-config.json`):
+
+- Tags are plain semver (`0.0.1`, `0.0.2`, …) — no `v` prefix.
+- We're in the pre-1.0 phase: `bump-patch-for-minor-pre-major` makes regular
+  `feat:` commits bump the patch (so we stay in `0.0.*`); breaking changes
+  (`feat!:` / `BREAKING CHANGE:`) bump the minor (`0.0.* → 0.1.0`).
+
 The version baked into the release binaries is set via
 `-ldflags "-X main.version=<tag>"` and is shown by `flowgo version`.
 
