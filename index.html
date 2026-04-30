@@ -50,7 +50,7 @@
     box-sizing: border-box; cursor: crosshair; z-index: 5;
     opacity: 0; transition: opacity .12s;
   }
-  .box:hover .handle, .handle.active { opacity: 1; }
+  .box:hover .handle, .handle.active, .box.proximity-target .handle { opacity: 1; }
   .box[contenteditable="true"] .handle { display: none; }
 
   .h-t  { top: -20px;    left: 50%;     transform: translateX(-50%); }
@@ -226,6 +226,7 @@ let drag = null;       // box drag
 let link = null;       // link drag from a handle
 let editing = null;
 let dropTargetId = null;
+let nearTargetId = null; // box close enough to the cursor during a link drag
 
 const canvas = document.getElementById("canvas");
 const svg = document.getElementById("edges");
@@ -414,6 +415,34 @@ function applyClasses() {
     el.classList.toggle("selected", selected.has(el.dataset.id));
     el.classList.toggle("connect-source", el.dataset.id === connectFrom);
     el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
+    el.classList.toggle("proximity-target", el.dataset.id === nearTargetId);
+  }
+}
+
+const PROXIMITY_PX = 60;
+function updateProximity(cx, cy) {
+  let best = null, bestD = Infinity;
+  for (const b of state.boxes) {
+    if (link && b.id === link.fromId) continue;
+    const el = canvas.querySelector(`.box[data-id="${b.id}"]`);
+    if (!el) continue;
+    const x1 = b.x, y1 = b.y;
+    const x2 = b.x + el.offsetWidth, y2 = b.y + el.offsetHeight;
+    const ddx = Math.max(x1 - cx, 0, cx - x2);
+    const ddy = Math.max(y1 - cy, 0, cy - y2);
+    const d = Math.hypot(ddx, ddy);
+    if (d < bestD && d <= PROXIMITY_PX) { bestD = d; best = b.id; }
+  }
+  if (best !== nearTargetId) {
+    nearTargetId = best;
+    applyClasses();
+  }
+}
+
+function clearProximity() {
+  if (nearTargetId !== null) {
+    nearTargetId = null;
+    applyClasses();
   }
 }
 
@@ -704,6 +733,7 @@ document.addEventListener("mousemove", (e) => {
       dropTargetId = id;
       applyClasses();
     }
+    updateProximity(e.clientX, e.clientY);
   }
 });
 
@@ -793,12 +823,13 @@ document.addEventListener("mouseup", (e) => {
         selected.clear();
         selected.add(newId);
         applyClasses();
-        startEdit(newEl, newBox);
+        startEdit(newEl, newBox, { cancelDeletes: true });
       }
       scheduleSave();
     }
     link = null;
     if (dropTargetId) { dropTargetId = null; applyClasses(); }
+    clearProximity();
   }
 });
 
@@ -840,9 +871,10 @@ function handleConnectClick(b) {
   renderEdges();
 }
 
-function startEdit(el, b) {
+function startEdit(el, b, opts) {
   if (editing) return;
   editing = el;
+  const cancelDeletes = opts && opts.cancelDeletes;
   // Hide handles by clearing them while editing — easier than CSS on text node only.
   el.contentEditable = "true";
   el.textContent = b.label;
@@ -868,6 +900,20 @@ function startEdit(el, b) {
     el.contentEditable = "false";
     editing = null;
     const newLabel = el.textContent.replace(/\s+/g, " ").trim();
+    if (!commit && cancelDeletes) {
+      // Roll back: drop the just-spawned box and any of its edges.
+      state.boxes = state.boxes.filter(x => x.id !== b.id);
+      state.edges = state.edges.filter(e => e.from !== b.id && e.to !== b.id);
+      const removedPath = currentPath === "/" ? "/" + b.id : currentPath + "/" + b.id;
+      graph.maps = graph.maps.filter(m =>
+        m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
+      state = ensureMap(currentPath);
+      selected.delete(b.id);
+      scheduleSave();
+      renderAll();
+      setStatus("cancelled");
+      return;
+    }
     if (commit && newLabel && newLabel !== b.label) {
       b.label = newLabel;
       scheduleSave();
@@ -980,7 +1026,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
-    if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); }
+    if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
     if (mode === "connect") setMode("normal");
     selected.clear();
     selectedEdge = null;
