@@ -76,14 +76,35 @@ func main() {
 		os.Exit(1)
 	}
 	switch os.Args[1] {
-	case "version", "-v", "--version":
-		printVersion(os.Stdout)
-		return
-	case "help", "-h", "--help":
-		printUsage(os.Stdout)
+	case "serve":
+		runServe(os.Args[2:])
 		return
 	}
-	filePath = os.Args[1]
+	bindHost := "127.0.0.1"
+	var positional []string
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "version", "-v", "--version":
+			printVersion(os.Stdout)
+			return
+		case "help", "-h", "--help":
+			printUsage(os.Stdout)
+			return
+		case "--host":
+			bindHost = "0.0.0.0"
+		default:
+			if strings.HasPrefix(a, "-") {
+				fmt.Fprintf(os.Stderr, "unknown flag: %s\n", a)
+				os.Exit(1)
+			}
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) < 1 {
+		printUsage(os.Stderr)
+		os.Exit(1)
+	}
+	filePath = positional[0]
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
@@ -101,15 +122,20 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintln(w, resolveVersionString())
 	})
+	http.HandleFunc("/mcp", handleMCP)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", bindHost+":0")
 	if err != nil {
 		die("listen: %v", err)
 	}
 	addr := ln.Addr().(*net.TCPAddr)
-	url := fmt.Sprintf("http://127.0.0.1:%d", addr.Port)
-	fmt.Printf("flowgo editing %s at %s\n", filePath, url)
-	openBrowser(url)
+	url := fmt.Sprintf("http://%s:%d", bindHost, addr.Port)
+	fmt.Printf("flowgo editing %s\n  GUI: %s\n  MCP: %s/mcp\n", filePath, url, url)
+	if bindHost == "127.0.0.1" {
+		openBrowser(url)
+	} else {
+		fmt.Printf("  (bound to all interfaces — substitute 0.0.0.0 with the host's IP / localhost when you connect)\n")
+	}
 	if err := http.Serve(ln, nil); err != nil {
 		die("serve: %v", err)
 	}
@@ -351,9 +377,12 @@ func printUsage(w *os.File) {
 	fmt.Fprintf(w, `flowgo — browser-based mind-map editor backed by a plain-text file.
 
 Usage:
-  flowgo <file.flowgo>     open the editor on the given file (created if missing)
-  flowgo version           print version info
-  flowgo help              show this message
+  flowgo <file.flowgo>             open the editor (binds 127.0.0.1 only)
+  flowgo <file.flowgo> --host      bind 0.0.0.0 (reach from outside this machine/container)
+  flowgo serve [flags]             public mode: multi-workspace MCP + share-via-webhook
+                                   (run 'flowgo serve --help' for flags)
+  flowgo version                   print version info
+  flowgo help                      show this message
 `)
 }
 

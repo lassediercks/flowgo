@@ -165,6 +165,8 @@
   <button id="upBtn">↑ Up</button>
   <button id="addBtn">+ Box</button>
   <button id="deleteBtn">Delete</button>
+  <button id="downloadBtn" style="display:none">Download .flowgo</button>
+  <button id="reshareBtn"  style="display:none">Save as new share</button>
   <span id="path"></span>
 </div>
 <div id="bg-layer"></div>
@@ -363,9 +365,31 @@ function findItem(id) {
 
 function setStatus(s) { statusEl.textContent = s; }
 
+// Snapshot mode: when the page is served at /m/<id>, edits live in browser
+// memory only. /save is a no-op. The toolbar shows Download + Save-as-new-
+// share; both go to the website's /api/snapshot endpoint (the page's origin).
+const SNAPSHOT_MATCH = location.pathname.match(/^\/m\/([\w-]+)\/?$/);
+const SNAPSHOT_ID = SNAPSHOT_MATCH ? SNAPSHOT_MATCH[1] : null;
+const SNAPSHOT_MODE = !!SNAPSHOT_ID;
+
 async function load() {
-  const r = await fetch("/state");
-  graph = await r.json();
+  if (SNAPSHOT_MODE) {
+    document.body.classList.add("snapshot-mode");
+    document.getElementById("downloadBtn").style.display = "";
+    document.getElementById("reshareBtn").style.display  = "";
+    try {
+      const r = await fetch("/api/snapshot/" + encodeURIComponent(SNAPSHOT_ID));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const body = await r.json();
+      graph = body.graph || body;
+    } catch (err) {
+      setStatus("snapshot " + SNAPSHOT_ID + " not loaded: " + err.message);
+      graph = null;
+    }
+  } else {
+    const r = await fetch("/state");
+    graph = await r.json();
+  }
   if (!graph || !graph.maps || graph.maps.length === 0) {
     graph = { maps: [{ path: "/", boxes: [], edges: [] }] };
   }
@@ -373,7 +397,7 @@ async function load() {
   undoStack = [];
   redoStack = [];
   setCurrentPath("/");
-  setStatus("loaded");
+  setStatus(SNAPSHOT_MODE ? "snapshot " + SNAPSHOT_ID + " — local edits only" : "loaded");
 }
 
 function ensureMap(path) {
@@ -451,12 +475,98 @@ function scheduleSave() {
 }
 
 async function saveBody(body) {
+  if (SNAPSHOT_MODE) {
+    setStatus("local edits only — use Download or Save as new share");
+    return;
+  }
   await fetch("/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
   });
   setStatus("saved");
+}
+
+// Mirror of the Go serialize() in main.go so the browser can produce a
+// .flowgo file without involving the server.
+function flowgoQuote(s) {
+  if (!s || /[\s"\\]/.test(s)) {
+    return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+  }
+  return s;
+}
+function flowgoNum(n) {
+  if (Number.isInteger(n)) return String(n);
+  return String(n);
+}
+function serializeGraph(g) {
+  const maps = (g.maps || []).filter(m =>
+    (m.boxes && m.boxes.length) ||
+    (m.edges && m.edges.length) ||
+    (m.texts && m.texts.length) ||
+    (m.lines && m.lines.length)
+  );
+  const multi = maps.length > 1;
+  let out = "";
+  maps.forEach((m, i) => {
+    if (i > 0) out += "\n";
+    if (multi || m.path !== "/") out += "map " + m.path + "\n";
+    for (const b of (m.boxes || [])) {
+      out += "box " + b.id + " " + flowgoQuote(b.label || "") + " " + flowgoNum(b.x) + " " + flowgoNum(b.y) + "\n";
+    }
+    if ((m.boxes || []).length && (m.edges || []).length) out += "\n";
+    for (const e of (m.edges || [])) {
+      const f = e.fromHandle ? (e.from + ":" + e.fromHandle) : e.from;
+      const t = e.toHandle   ? (e.to   + ":" + e.toHandle)   : e.to;
+      out += "edge " + f + " " + t + "\n";
+    }
+    const beforeTexts = (m.boxes || []).length || (m.edges || []).length;
+    if (beforeTexts && (m.texts || []).length) out += "\n";
+    for (const t of (m.texts || [])) {
+      out += "text " + t.id + " " + flowgoQuote(t.label || "") + " " + flowgoNum(t.x) + " " + flowgoNum(t.y) + "\n";
+    }
+    const beforeLines = beforeTexts || (m.texts || []).length;
+    if (beforeLines && (m.lines || []).length) out += "\n";
+    for (const l of (m.lines || [])) {
+      out += "line " + l.id + " " + flowgoNum(l.x1) + " " + flowgoNum(l.y1) + " " + flowgoNum(l.x2) + " " + flowgoNum(l.y2) + "\n";
+    }
+  });
+  return out;
+}
+
+function downloadFlowgo() {
+  const text = serializeGraph(graph);
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (SNAPSHOT_ID ? SNAPSHOT_ID : "mindmap") + ".flowgo";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus("downloaded");
+}
+
+async function reshare() {
+  setStatus("re-sharing…");
+  try {
+    const r = await fetch("/api/snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const body = await r.json();
+    if (!body.url) throw new Error("response missing url");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(body.url).catch(() => {});
+    }
+    setStatus("new share: " + body.url + " (copied)");
+    if (body.id) history.pushState(null, "", "/m/" + body.id);
+  } catch (err) {
+    setStatus("re-share failed: " + err.message);
+  }
 }
 
 async function save() {
@@ -1424,6 +1534,8 @@ document.getElementById("deleteBtn").addEventListener("click", () => {
 });
 
 document.getElementById("upBtn").addEventListener("click", goUp);
+document.getElementById("downloadBtn").addEventListener("click", downloadFlowgo);
+document.getElementById("reshareBtn").addEventListener("click", reshare);
 
 const helpOverlay = document.getElementById("helpOverlay");
 function setHelpOpen(open) { helpOverlay.classList.toggle("hidden", !open); }

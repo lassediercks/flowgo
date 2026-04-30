@@ -100,6 +100,31 @@ box d1 "Bug #42" 100 100
 Files without any `map` directive parse as a single root map — fully
 backwards-compatible with the flat form.
 
+## MCP (AI integration)
+
+`flowgo <file>` also serves a [Model Context Protocol](https://spec.modelcontextprotocol.io)
+endpoint at `/mcp` on the same port as the GUI. Point any MCP client (Claude
+Desktop, Cursor, etc.) at:
+
+```
+http://127.0.0.1:<port>/mcp
+```
+
+The port is printed at startup next to `MCP:`. Both the GUI and MCP share the
+same file mutex, so AI edits and GUI edits coexist safely.
+
+Available tools:
+
+- `get_state` — read the full graph
+- `set_state` — overwrite the full graph
+- `add_box`, `update_box`, `delete_box`
+- `add_edge`, `delete_edge`
+- `add_text`, `add_line`
+
+All tools take an optional `path` (defaults to `/`) so AI can target submaps.
+The transport is JSON-RPC 2.0 over POST (streamable-HTTP, simple form — no
+sessions or SSE).
+
 ## Releases
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).

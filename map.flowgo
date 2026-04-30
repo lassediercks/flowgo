@@ -1,10 +1,10 @@
 map /
 box b1 Versioning 1483.7759604114208 754.4856902282373
-box b2 FlowGo 879 772
+box b2 FlowGo 840 763
 box b3 Mapping 878.5 422.5
 box b4 Layering 584.5 758.5
 box b5 Humans 1251 173.5
-box b6 Abstraction 1195 276.5
+box b6 Abstraction 1195 300.5
 box b7 "Simple Tools" 1456 322.5
 
 edge b5:b b6:t
