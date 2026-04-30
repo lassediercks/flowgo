@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.5](https://github.com/lassediercks/flowgo/compare/0.0.4...0.0.5) (2026-04-30)
+
+
+### Bug Fixes
+
+* panning and connecting ([3448646](https://github.com/lassediercks/flowgo/commit/344864643779a5e9bdb97aa31b3455c796cf30f5))
+
 ## [0.0.4](https://github.com/lassediercks/flowgo/compare/0.0.3...0.0.4) (2026-04-30)
 
 
