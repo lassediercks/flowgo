@@ -1,0 +1,630 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>flowgo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 14px system-ui, sans-serif; }
+  #toolbar {
+    position: fixed; top: 8px; left: 8px; z-index: 10;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  #toolbar button { margin-right: 6px; }
+  #toolbar button.active { background: #07f; color: #fff; border-color: #07f; }
+  #status { position: fixed; bottom: 8px; left: 8px; color: #666; font-size: 12px; }
+  #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
+  #path .seg { cursor: pointer; }
+  #path .seg:hover { text-decoration: underline; }
+  #path .sep { color: #aaa; }
+  #canvas { position: absolute; inset: 0; background: #fafafa; }
+  body.connect #canvas { cursor: crosshair; }
+  .box {
+    position: absolute; min-width: 80px; padding: 8px 12px;
+    background: #fff; border: 2px solid #333; border-radius: 6px;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,.1);
+    cursor: grab;
+  }
+  .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
+  .box.connect-source { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.25); }
+  .box.selected { border-color: #07f; }
+  .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
+  .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
+  body.connect .box { cursor: crosshair; }
+
+  .handle {
+    position: absolute; width: 12px; height: 12px;
+    background: #07f; border: 2px solid #fff; border-radius: 50%;
+    box-sizing: border-box; cursor: crosshair; z-index: 5;
+    opacity: 0; transition: opacity .12s;
+  }
+  .box:hover .handle, .handle.active { opacity: 1; }
+  .box[contenteditable="true"] .handle { display: none; }
+
+  .h-t  { top: -8px;    left: 50%;    transform: translateX(-50%); }
+  .h-r  { top: 50%;     right: -8px;  transform: translateY(-50%); }
+  .h-b  { bottom: -8px; left: 50%;    transform: translateX(-50%); }
+  .h-l  { top: 50%;     left: -8px;   transform: translateY(-50%); }
+  .h-tl { top: -8px;    left: -8px; }
+  .h-tr { top: -8px;    right: -8px; }
+  .h-bl { bottom: -8px; left: -8px; }
+  .h-br { bottom: -8px; right: -8px; }
+
+  svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 4; }
+  .edge-group { pointer-events: none; }
+  .edge-hit { pointer-events: stroke; cursor: pointer; }
+  .edge-line { stroke: #333; stroke-width: 2; }
+  .edge-group.selected .edge-line { stroke: #07f; stroke-width: 3; }
+  .help { color: #666; font-size: 12px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="upBtn">↑ Up</button>
+  <button id="addBtn">+ Box</button>
+  <button id="connectBtn">Connect</button>
+  <button id="deleteBtn">Delete</button>
+  <span id="path"></span>
+  <span class="help">click to edit · drag to move · drag dot to connect · middle-click or ⌘+click to enter submap</span>
+</div>
+<div id="canvas"></div>
+<svg id="edges">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
+    </marker>
+    <marker id="arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
+    </marker>
+  </defs>
+  <g id="edge-layer"></g>
+  <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
+</svg>
+<div id="status">loading…</div>
+
+<script>
+let graph = { maps: [] };
+let currentPath = "/";
+let state = { boxes: [], edges: [] }; // alias for the current map
+let selected = null;
+let selectedEdge = null; // reference to an entry in state.edges
+let connectFrom = null;
+let mode = "normal";
+let saveTimer = null;
+let drag = null;       // box drag
+let link = null;       // link drag from a handle
+let editing = null;
+let dropTargetId = null;
+
+const canvas = document.getElementById("canvas");
+const svg = document.getElementById("edges");
+const edgeLayer = document.getElementById("edge-layer");
+const ghostLine = document.getElementById("ghost-line");
+const statusEl = document.getElementById("status");
+const connectBtn = document.getElementById("connectBtn");
+
+const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
+
+function uid() {
+  let n = 1;
+  const used = new Set(state.boxes.map(b => b.id));
+  while (used.has("b" + n)) n++;
+  return "b" + n;
+}
+
+function setStatus(s) { statusEl.textContent = s; }
+
+async function load() {
+  const r = await fetch("/state");
+  graph = await r.json();
+  if (!graph || !graph.maps || graph.maps.length === 0) {
+    graph = { maps: [{ path: "/", boxes: [], edges: [] }] };
+  }
+  setCurrentPath("/");
+  setStatus("loaded");
+}
+
+function ensureMap(path) {
+  let m = graph.maps.find(m => m.path === path);
+  if (!m) {
+    m = { path, boxes: [], edges: [] };
+    graph.maps.push(m);
+  }
+  m.boxes ||= [];
+  m.edges ||= [];
+  return m;
+}
+
+function setCurrentPath(p) {
+  currentPath = p;
+  state = ensureMap(p);
+  selected = null;
+  selectedEdge = null;
+  if (mode === "connect") setMode("normal");
+  renderAll();
+  renderPath();
+}
+
+function renderPath() {
+  const el = document.getElementById("path");
+  el.innerHTML = "";
+  const segs = currentPath === "/" ? [] : currentPath.split("/").filter(Boolean);
+  const root = document.createElement("span");
+  root.className = "seg";
+  root.textContent = "/";
+  root.addEventListener("click", () => setCurrentPath("/"));
+  el.appendChild(root);
+  let acc = "";
+  segs.forEach((s, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "sep";
+      sep.textContent = "/";
+      el.appendChild(sep);
+    }
+    acc += "/" + s;
+    const path = acc;
+    const seg = document.createElement("span");
+    seg.className = "seg";
+    seg.textContent = s;
+    if (i < segs.length - 1) {
+      seg.addEventListener("click", () => setCurrentPath(path));
+    } else {
+      seg.style.fontWeight = "bold";
+      seg.style.cursor = "default";
+    }
+    el.appendChild(seg);
+  });
+  document.getElementById("upBtn").disabled = (currentPath === "/");
+}
+
+function enterSubmap(boxId) {
+  const newPath = currentPath === "/" ? "/" + boxId : currentPath + "/" + boxId;
+  setCurrentPath(newPath);
+}
+
+function goUp() {
+  if (currentPath === "/") return;
+  const parts = currentPath.split("/").filter(Boolean);
+  parts.pop();
+  setCurrentPath(parts.length ? "/" + parts.join("/") : "/");
+}
+
+function scheduleSave() {
+  setStatus("saving…");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 200);
+}
+
+async function save() {
+  await fetch("/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(graph),
+  });
+  setStatus("saved");
+}
+
+function renderAll() {
+  canvas.innerHTML = "";
+  for (const b of state.boxes) {
+    const el = document.createElement("div");
+    el.className = "box";
+    el.dataset.id = b.id;
+    el.style.left = b.x + "px";
+    el.style.top = b.y + "px";
+    el.textContent = b.label;
+    for (const code of HANDLE_CODES) {
+      const h = document.createElement("div");
+      h.className = "handle h-" + code;
+      h.dataset.handle = code;
+      el.appendChild(h);
+    }
+    canvas.appendChild(el);
+    attachBoxHandlers(el, b);
+  }
+  applyClasses();
+  renderEdges();
+}
+
+function applyClasses() {
+  for (const el of canvas.querySelectorAll(".box")) {
+    el.classList.toggle("selected", el.dataset.id === selected);
+    el.classList.toggle("connect-source", el.dataset.id === connectFrom);
+    el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
+  }
+}
+
+function renderEdges() {
+  edgeLayer.innerHTML = "";
+  const ns = "http://www.w3.org/2000/svg";
+  for (const e of state.edges) {
+    const a = state.boxes.find(b => b.id === e.from);
+    const b = state.boxes.find(b => b.id === e.to);
+    if (!a || !b) continue;
+    const ea = canvas.querySelector(`.box[data-id="${a.id}"]`);
+    const eb = canvas.querySelector(`.box[data-id="${b.id}"]`);
+    if (!ea || !eb) continue;
+    const acx = a.x + ea.offsetWidth / 2, acy = a.y + ea.offsetHeight / 2;
+    const bcx = b.x + eb.offsetWidth / 2, bcy = b.y + eb.offsetHeight / 2;
+    const [ax, ay] = endpointAnchor(a, ea, e.fromHandle, bcx, bcy);
+    const [bx, by] = endpointAnchor(b, eb, e.toHandle, acx, acy);
+
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("class", "edge-group" + (e === selectedEdge ? " selected" : ""));
+
+    const hit = document.createElementNS(ns, "line");
+    hit.setAttribute("class", "edge-hit");
+    hit.setAttribute("x1", ax); hit.setAttribute("y1", ay);
+    hit.setAttribute("x2", bx); hit.setAttribute("y2", by);
+    hit.setAttribute("stroke", "transparent");
+    hit.setAttribute("stroke-width", "12");
+    g.appendChild(hit);
+
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("class", "edge-line");
+    line.setAttribute("x1", ax); line.setAttribute("y1", ay);
+    line.setAttribute("x2", bx); line.setAttribute("y2", by);
+    g.appendChild(line);
+
+    g.addEventListener("mousedown", (ev) => {
+      ev.stopPropagation();
+      selectedEdge = e;
+      selected = null;
+      applyClasses();
+      renderEdges();
+      setStatus("edge selected — press Delete to remove");
+    });
+
+    edgeLayer.appendChild(g);
+  }
+}
+
+const HANDLE_OFFSET = 8; // matches the visual offset of .handle elements outside the box border
+
+function handleAnchor(el, b, code) {
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const cx = b.x + w / 2, cy = b.y + h / 2;
+  const o = HANDLE_OFFSET;
+  switch (code) {
+    case "t":  return [cx,         b.y - o];
+    case "b":  return [cx,         b.y + h + o];
+    case "l":  return [b.x - o,    cy];
+    case "r":  return [b.x + w + o, cy];
+    case "tl": return [b.x - o,    b.y - o];
+    case "tr": return [b.x + w + o, b.y - o];
+    case "bl": return [b.x - o,    b.y + h + o];
+    case "br": return [b.x + w + o, b.y + h + o];
+  }
+  return [cx, cy];
+}
+
+function nearestHandle(b, el, fx, fy) {
+  let best = "r", bestD = Infinity;
+  for (const c of HANDLE_CODES) {
+    const [hx, hy] = handleAnchor(el, b, c);
+    const d = Math.hypot(hx - fx, hy - fy);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function endpointAnchor(b, el, code, towardX, towardY) {
+  if (!code) code = nearestHandle(b, el, towardX, towardY);
+  return handleAnchor(el, b, code);
+}
+
+function addOrReplaceEdge(newEdge) {
+  // Edges are undirected: a new edge between A and B removes any prior edge
+  // between the same pair, in either direction.
+  state.edges = state.edges.filter(e => {
+    const samePair =
+      (e.from === newEdge.from && e.to === newEdge.to) ||
+      (e.from === newEdge.to   && e.to === newEdge.from);
+    return !samePair;
+  });
+  state.edges.push(newEdge);
+}
+
+function attachBoxHandlers(el, b) {
+  el.addEventListener("mousedown", (e) => {
+    if (el.isContentEditable) return;
+    if (e.button === 1 || (e.button === 0 && e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      enterSubmap(b.id);
+      return;
+    }
+    if (e.button !== 0) return;
+
+    // handle click? start link-drag.
+    if (e.target.classList.contains("handle")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const code = e.target.dataset.handle;
+      const [hx, hy] = handleAnchor(el, b, code);
+      link = {
+        fromId: b.id,
+        fromHandle: code,
+        startX: hx, startY: hy,
+        handleEl: e.target,
+      };
+      e.target.classList.add("active");
+      ghostLine.setAttribute("x1", hx);
+      ghostLine.setAttribute("y1", hy);
+      ghostLine.setAttribute("x2", e.clientX);
+      ghostLine.setAttribute("y2", e.clientY);
+      ghostLine.style.display = "";
+      setStatus("drop on a box to connect, or release to cancel");
+      return;
+    }
+
+    // body drag
+    e.preventDefault();
+    e.stopPropagation();
+    drag = {
+      box: b, el,
+      downX: e.clientX, downY: e.clientY,
+      startX: b.x, startY: b.y,
+      active: false,
+    };
+  });
+}
+
+document.addEventListener("mousemove", (e) => {
+  if (drag) {
+    const dx = e.clientX - drag.downX;
+    const dy = e.clientY - drag.downY;
+    if (!drag.active && Math.hypot(dx, dy) > 4) {
+      drag.active = true;
+      drag.el.classList.add("dragging");
+    }
+    if (drag.active) {
+      drag.box.x = drag.startX + dx;
+      drag.box.y = drag.startY + dy;
+      drag.el.style.left = drag.box.x + "px";
+      drag.el.style.top = drag.box.y + "px";
+      renderEdges();
+    }
+    return;
+  }
+  if (link) {
+    ghostLine.setAttribute("x2", e.clientX);
+    ghostLine.setAttribute("y2", e.clientY);
+    const target = findBoxAt(e.clientX, e.clientY);
+    const id = target && target.dataset.id !== link.fromId ? target.dataset.id : null;
+    if (id !== dropTargetId) {
+      dropTargetId = id;
+      applyClasses();
+    }
+  }
+});
+
+document.addEventListener("mouseup", (e) => {
+  if (drag) {
+    const { box, el, active } = drag;
+    drag = null;
+    el.classList.remove("dragging");
+    if (active) {
+      scheduleSave();
+    } else {
+      if (mode === "connect") {
+        handleConnectClick(box);
+      } else {
+        selected = box.id;
+        if (selectedEdge) { selectedEdge = null; renderEdges(); }
+        applyClasses();
+        startEdit(el, box);
+      }
+    }
+    return;
+  }
+  if (link) {
+    link.handleEl.classList.remove("active");
+    ghostLine.style.display = "none";
+    const target = findBoxAt(e.clientX, e.clientY);
+    if (target && target.dataset.id !== link.fromId) {
+      const toId = target.dataset.id;
+      const targetBox = state.boxes.find(b => b.id === toId);
+      // If the cursor is over one of this target's handles, use that handle code.
+      // Otherwise pick the handle closest to the source anchor.
+      let toCode = null;
+      const stack = document.elementsFromPoint(e.clientX, e.clientY);
+      for (const el of stack) {
+        if (el.classList && el.classList.contains("handle") && el.parentElement === target) {
+          toCode = el.dataset.handle;
+          break;
+        }
+      }
+      if (!toCode) {
+        toCode = nearestHandle(targetBox, target, link.startX, link.startY);
+      }
+      addOrReplaceEdge({ from: link.fromId, fromHandle: link.fromHandle, to: toId, toHandle: toCode });
+      scheduleSave();
+      renderEdges();
+    } else {
+      setStatus("cancelled");
+    }
+    link = null;
+    if (dropTargetId) { dropTargetId = null; applyClasses(); }
+  }
+});
+
+function findBoxAt(x, y) {
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    if (!el || el === ghostLine) continue;
+    const box = el.closest && el.closest(".box");
+    if (box) return box;
+  }
+  return null;
+}
+
+function handleConnectClick(b) {
+  if (connectFrom == null) {
+    connectFrom = b.id;
+    setStatus("source: " + b.label + " — click target");
+    applyClasses();
+    return;
+  }
+  if (connectFrom === b.id) {
+    connectFrom = null;
+    setStatus("connect: click source");
+    applyClasses();
+    return;
+  }
+  const a = state.boxes.find(x => x.id === connectFrom);
+  const ea = canvas.querySelector(`.box[data-id="${a.id}"]`);
+  const eb = canvas.querySelector(`.box[data-id="${b.id}"]`);
+  const acx = a.x + ea.offsetWidth / 2, acy = a.y + ea.offsetHeight / 2;
+  const bcx = b.x + eb.offsetWidth / 2, bcy = b.y + eb.offsetHeight / 2;
+  const fromCode = nearestHandle(a, ea, bcx, bcy);
+  const toCode = nearestHandle(b, eb, acx, acy);
+  addOrReplaceEdge({ from: connectFrom, fromHandle: fromCode, to: b.id, toHandle: toCode });
+  scheduleSave();
+  connectFrom = null;
+  setStatus("edge added — click another source or press Connect to exit");
+  applyClasses();
+  renderEdges();
+}
+
+function startEdit(el, b) {
+  if (editing) return;
+  editing = el;
+  // Hide handles by clearing them while editing — easier than CSS on text node only.
+  el.contentEditable = "true";
+  el.textContent = b.label;
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  const restoreHandles = () => {
+    for (const code of HANDLE_CODES) {
+      const h = document.createElement("div");
+      h.className = "handle h-" + code;
+      h.dataset.handle = code;
+      el.appendChild(h);
+    }
+  };
+
+  const finish = (commit) => {
+    el.removeEventListener("blur", onBlur);
+    el.removeEventListener("keydown", onKey);
+    el.contentEditable = "false";
+    editing = null;
+    const newLabel = el.textContent.replace(/\s+/g, " ").trim();
+    if (commit && newLabel && newLabel !== b.label) {
+      b.label = newLabel;
+      scheduleSave();
+    }
+    el.textContent = b.label;
+    restoreHandles();
+    renderEdges();
+  };
+  const onBlur = () => finish(true);
+  const onKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); el.blur(); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    e.stopPropagation();
+  };
+  el.addEventListener("blur", onBlur);
+  el.addEventListener("keydown", onKey);
+}
+
+function setMode(m) {
+  mode = m;
+  connectFrom = null;
+  document.body.classList.toggle("connect", m === "connect");
+  connectBtn.classList.toggle("active", m === "connect");
+  setStatus(m === "connect" ? "connect: click source, then target" : "");
+  applyClasses();
+}
+
+document.getElementById("addBtn").addEventListener("click", () => {
+  const x = 100 + Math.random() * 400;
+  const y = 100 + Math.random() * 300;
+  const id = uid();
+  const b = { id, label: "new", x, y };
+  state.boxes.push(b);
+  scheduleSave();
+  renderAll();
+  const el = canvas.querySelector(`.box[data-id="${id}"]`);
+  if (el) {
+    selected = id;
+    applyClasses();
+    startEdit(el, b);
+  }
+});
+
+connectBtn.addEventListener("click", () => {
+  setMode(mode === "connect" ? "normal" : "connect");
+});
+
+document.getElementById("deleteBtn").addEventListener("click", () => {
+  if (!selected) { setStatus("nothing selected"); return; }
+  state.boxes = state.boxes.filter(b => b.id !== selected);
+  state.edges = state.edges.filter(e => e.from !== selected && e.to !== selected);
+  // Drop the deleted box's submap and any descendants.
+  const removedPath = currentPath === "/" ? "/" + selected : currentPath + "/" + selected;
+  graph.maps = graph.maps.filter(m =>
+    m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
+  // Persist the alias, since filtering may have removed the current map (it shouldn't, but be safe).
+  state = ensureMap(currentPath);
+  selected = null;
+  scheduleSave();
+  renderAll();
+});
+
+document.getElementById("upBtn").addEventListener("click", goUp);
+
+// Suppress middle-click autoscroll/paste so we can use it for navigation.
+window.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
+window.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); }, true);
+
+document.addEventListener("keydown", (e) => {
+  if (editing) return;
+  if (e.key === "Escape") {
+    if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); }
+    if (mode === "connect") setMode("normal");
+    selected = null;
+    selectedEdge = null;
+    applyClasses();
+    renderEdges();
+  }
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (selectedEdge) {
+      e.preventDefault();
+      const idx = state.edges.indexOf(selectedEdge);
+      if (idx >= 0) state.edges.splice(idx, 1);
+      selectedEdge = null;
+      scheduleSave();
+      renderEdges();
+      setStatus("edge removed");
+      return;
+    }
+    if (selected) {
+      e.preventDefault();
+      document.getElementById("deleteBtn").click();
+    }
+  }
+});
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.target !== canvas) return;
+  if (mode === "connect") return;
+  selected = null;
+  if (selectedEdge) { selectedEdge = null; renderEdges(); }
+  applyClasses();
+});
+
+load();
+</script>
+</body>
+</html>
