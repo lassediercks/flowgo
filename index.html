@@ -11,9 +11,8 @@
     padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
   }
   #toolbar button { margin-right: 6px; }
-  #status { position: fixed; bottom: 8px; left: 140px; color: #666; font-size: 12px; }
   #version {
-    position: fixed; bottom: 8px; left: 8px;
+    position: fixed; bottom: 6px; left: 8px;
     color: #999; font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     pointer-events: none;
@@ -101,7 +100,7 @@
   .h-bl { bottom: -20px; left: -20px; }
   .h-br { bottom: -20px; right: -20px; }
 
-  svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 4; }
+  svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 1; }
   .edge-group { pointer-events: none; }
   .edge-hit { pointer-events: stroke; cursor: pointer; }
   .edge-line { stroke: #333; stroke-width: 2; }
@@ -270,7 +269,6 @@
   <g id="edge-layer"></g>
   <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
 </svg>
-<div id="status">loading…</div>
 <div id="version"></div>
 
 <script>
@@ -338,7 +336,6 @@ const svg = document.getElementById("edges");
 const edgeLayer = document.getElementById("edge-layer");
 const lineLayer = document.getElementById("line-layer");
 const ghostLine = document.getElementById("ghost-line");
-const statusEl = document.getElementById("status");
 
 const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
 
@@ -363,7 +360,7 @@ function findItem(id) {
   return null;
 }
 
-function setStatus(s) { statusEl.textContent = s; }
+function setStatus(_s) { /* hint area removed — keep callers harmless */ }
 
 // Snapshot mode: when the page is served at /m/<id>, edits live in browser
 // memory only. /save is a no-op. The toolbar shows Download + Save-as-new-
@@ -777,7 +774,10 @@ function renderEdges() {
   }
 }
 
-const HANDLE_OFFSET = 14; // line endpoint sits at the visible center of the .handle dot
+// Handle dots still render with a CSS offset (-20px) so they're easy to grab,
+// but edge endpoints anchor to the box's actual border so the line visually
+// attaches to the box, not to the floating dot.
+const HANDLE_OFFSET = 0;
 
 function handleAnchor(el, b, code) {
   const w = el.offsetWidth, h = el.offsetHeight;
@@ -1259,7 +1259,11 @@ document.addEventListener("mousemove", (e) => {
       applyClasses();
     }
     updateProximity(toDataX(e.clientX), toDataY(e.clientY));
+    return;
   }
+  // Idle hover: still reveal handles on the nearest box if the cursor is
+  // within PROXIMITY_PX. Skipped while pan/drag/band/link is active.
+  updateProximity(toDataX(e.clientX), toDataY(e.clientY));
 });
 
 document.addEventListener("mouseup", (e) => {
