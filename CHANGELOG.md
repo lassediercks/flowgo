@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.8](https://github.com/lassediercks/flowgo/compare/0.0.7...0.0.8) (2026-04-30)
+
+
+### Features
+
+* presist navigation ([d10cc5b](https://github.com/lassediercks/flowgo/commit/d10cc5ba5680050c29c1df1fad47e3644211d1ed))
+
 ## [0.0.7](https://github.com/lassediercks/flowgo/compare/0.0.6...0.0.7) (2026-04-30)
 
 
