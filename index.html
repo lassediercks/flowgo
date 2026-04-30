@@ -162,8 +162,6 @@
 <body>
 <div id="toolbar">
   <button id="upBtn">↑ Up</button>
-  <button id="addBtn">+ Box</button>
-  <button id="deleteBtn">Delete</button>
   <button id="downloadBtn" style="display:none">Download .flowgo</button>
   <button id="reshareBtn"  style="display:none">Save as new share</button>
   <span id="path"></span>
@@ -393,7 +391,7 @@ async function load() {
   savedSnapshot = JSON.stringify(graph);
   undoStack = [];
   redoStack = [];
-  setCurrentPath("/");
+  setCurrentPath(readPathFromURL());
   setStatus(SNAPSHOT_MODE ? "snapshot " + SNAPSHOT_ID + " — local edits only" : "loaded");
 }
 
@@ -418,7 +416,26 @@ function setCurrentPath(p) {
   renderAll();
   renderPath();
   recenter();
+  // Persist the current submap path in the URL hash so the location is
+  // bookmarkable and the browser back/forward stack walks the navigation.
+  const newHash = "#" + p;
+  if (location.hash !== newHash) {
+    history.pushState(null, "", newHash);
+  }
 }
+
+function readPathFromURL() {
+  let h = location.hash || "";
+  if (h.startsWith("#")) h = h.slice(1);
+  if (!h) return "/";
+  if (!h.startsWith("/")) h = "/" + h;
+  return h;
+}
+
+window.addEventListener("hashchange", () => {
+  const p = readPathFromURL();
+  if (p !== currentPath) setCurrentPath(p);
+});
 
 function renderPath() {
   const el = document.getElementById("path");
@@ -1508,16 +1525,13 @@ function createLineAt(cx, cy) {
   scheduleSave();
 }
 
-document.getElementById("addBtn").addEventListener("click", () => {
-  createBoxAt(100 + Math.random() * 400, 100 + Math.random() * 300);
-});
 
 document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
   const dx = toDataX(e.clientX), dy = toDataY(e.clientY);
   createBoxAt(dx, dy, { x: dx, y: dy });
 });
 
-document.getElementById("deleteBtn").addEventListener("click", () => {
+function deleteSelection() {
   if (selected.size === 0) { setStatus("nothing selected"); return; }
   const ids = Array.from(selected);
   const boxIds = ids.filter(id => state.boxes.some(b => b.id === id));
@@ -1535,7 +1549,7 @@ document.getElementById("deleteBtn").addEventListener("click", () => {
   selected.clear();
   scheduleSave();
   renderAll();
-});
+}
 
 document.getElementById("upBtn").addEventListener("click", goUp);
 document.getElementById("downloadBtn").addEventListener("click", downloadFlowgo);
@@ -1613,7 +1627,7 @@ document.addEventListener("keydown", (e) => {
     }
     if (selected.size > 0) {
       e.preventDefault();
-      document.getElementById("deleteBtn").click();
+      deleteSelection();
     }
   }
 });
