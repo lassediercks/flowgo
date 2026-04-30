@@ -11,7 +11,13 @@
     padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
   }
   #toolbar button { margin-right: 6px; }
-  #status { position: fixed; bottom: 8px; left: 8px; color: #666; font-size: 12px; }
+  #status { position: fixed; bottom: 8px; left: 140px; color: #666; font-size: 12px; }
+  #version {
+    position: fixed; bottom: 8px; left: 8px;
+    color: #999; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    pointer-events: none;
+  }
   #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
   #path .seg { cursor: pointer; }
   #path .seg:hover { text-decoration: underline; }
@@ -202,6 +208,7 @@
   <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
 </svg>
 <div id="status">loading…</div>
+<div id="version"></div>
 
 <script>
 let graph = { maps: [] };
@@ -1012,6 +1019,10 @@ canvas.addEventListener("mousedown", (e) => {
 });
 
 load();
+fetch("/version")
+  .then(r => r.text())
+  .then(t => { document.getElementById("version").textContent = "flowgo " + t.trim(); })
+  .catch(() => {});
 </script>
 </body>
 </html>

@@ -77,6 +77,10 @@ func main() {
 	})
 	http.HandleFunc("/state", handleState)
 	http.HandleFunc("/save", handleSave)
+	http.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, resolveVersionString())
+	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -293,6 +297,43 @@ Usage:
   flowgo version           print version info
   flowgo help              show this message
 `)
+}
+
+func resolveVersionString() string {
+	return version
+}
+
+func compactVersion() string {
+	v := version
+	var rev string
+	dirty := false
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			v = info.Main.Version
+		}
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if len(s.Value) > 12 {
+					rev = s.Value[:12]
+				} else {
+					rev = s.Value
+				}
+			case "vcs.modified":
+				if s.Value == "true" {
+					dirty = true
+				}
+			}
+		}
+	}
+	if rev == "" {
+		return v
+	}
+	suffix := ""
+	if dirty {
+		suffix = "+dirty"
+	}
+	return v + " (" + rev + suffix + ")"
 }
 
 func printVersion(w *os.File) {
