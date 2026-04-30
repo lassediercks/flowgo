@@ -1,27 +1,47 @@
 map /
-box b1 Versioning 1306.2759604114208 615.4856902282373
-box b2 FlowGo 1141 426.5
-box b3 Mapping 954 622.5
-box b4 Layering 1128 613.5
+box b1 Versioning 1483.7759604114208 754.4856902282373
+box b2 FlowGo 879 772
+box b3 Mapping 881.5 402.5
+box b4 Layering 584.5 758.5
+box b5 Humans 1251 173.5
+box b6 Abstraction 1195 276.5
+box b7 "Simple Tools" 1456 322.5
 
-edge b2:b b4:t
-edge b2:r b1:t
-edge b2:l b3:t
+edge b5:b b6:t
+edge b3:b b2:t
+edge b1:t b6:br
+edge b3:tr b6:l
+edge b4:r b2:l
+edge b1:bl b2:r
+edge b5:br b7:t
+edge b7:bl b2:tr
+
+text t1 Genesis 608 933
+text t2 Emerging 895 930
+text t3 Product 1210 933
+text t4 Commodity 1495 930
+
+line l1 484.5 892 1684.5 892
+line l2 484.5 332 484.5 892
+line l3 785 342 779 892
+line l4 1099 332 1099 892
+line l5 1399 332 1399 892
+line l6 1679 332 1679 892
 
 map /b1
-box b1 Versioning 1208.7265659714383 421.7431936733593
-box b2 Controlled 1239 636.5
-box b3 Git 960 628.5
-box b4 Immutable 1549 600.5
+box b1 Versioning 1659.2265659714383 421.7431936733593
+box b2 Controlled 1689.5 636.5
+box b3 Git 1410.5 628.5
+box b4 Immutable 1999.5 600.5
 
 edge b1:b b2:tl
 edge b1:bl b3:tr
 edge b1:br b4:tl
 
 map /b3
-box b2 Mapping 1138 421.5
-box b3 Explorative 928 620.5
-box b1 Abstract 1262 624.5
+box b2 Mapping 1588.5 421.5
+box b3 Explorative 1378.5 620.5
+box b1 Abstract 1712.5 624.5
 
 edge b2:b b3:t
 edge b2:b b1:tl

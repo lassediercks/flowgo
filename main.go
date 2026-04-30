@@ -21,6 +21,9 @@ var version = "dev"
 //go:embed index.html
 var indexHTML string
 
+//go:embed .release-please-manifest.json
+var releasePleaseManifest []byte
+
 type Box struct {
 	ID    string  `json:"id"`
 	Label string  `json:"label"`
@@ -35,10 +38,27 @@ type Edge struct {
 	ToHandle   string `json:"toHandle,omitempty"`
 }
 
+type Text struct {
+	ID    string  `json:"id"`
+	Label string  `json:"label"`
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+}
+
+type Line struct {
+	ID string  `json:"id"`
+	X1 float64 `json:"x1"`
+	Y1 float64 `json:"y1"`
+	X2 float64 `json:"x2"`
+	Y2 float64 `json:"y2"`
+}
+
 type NamedMap struct {
 	Path  string `json:"path"`
 	Boxes []Box  `json:"boxes"`
 	Edges []Edge `json:"edges"`
+	Texts []Text `json:"texts,omitempty"`
+	Lines []Line `json:"lines,omitempty"`
 }
 
 type Graph struct {
@@ -182,6 +202,32 @@ func parse(s string) (Graph, error) {
 			fromID, fromH := splitEndpoint(toks[1])
 			toID, toH := splitEndpoint(toks[2])
 			g.Maps[cur].Edges = append(g.Maps[cur].Edges, Edge{From: fromID, FromHandle: fromH, To: toID, ToHandle: toH})
+		case "text":
+			if len(toks) < 5 {
+				return g, fmt.Errorf("line %d: text needs id label x y", lineNo)
+			}
+			x, err := strconv.ParseFloat(toks[3], 64)
+			if err != nil {
+				return g, fmt.Errorf("line %d: bad x: %v", lineNo, err)
+			}
+			y, err := strconv.ParseFloat(toks[4], 64)
+			if err != nil {
+				return g, fmt.Errorf("line %d: bad y: %v", lineNo, err)
+			}
+			g.Maps[cur].Texts = append(g.Maps[cur].Texts, Text{ID: toks[1], Label: toks[2], X: x, Y: y})
+		case "line":
+			if len(toks) < 6 {
+				return g, fmt.Errorf("line %d: line needs id x1 y1 x2 y2", lineNo)
+			}
+			coords := make([]float64, 4)
+			for i, t := range toks[2:6] {
+				v, err := strconv.ParseFloat(t, 64)
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad coord: %v", lineNo, err)
+				}
+				coords[i] = v
+			}
+			g.Maps[cur].Lines = append(g.Maps[cur].Lines, Line{ID: toks[1], X1: coords[0], Y1: coords[1], X2: coords[2], Y2: coords[3]})
 		default:
 			return g, fmt.Errorf("line %d: unknown directive %q", lineNo, toks[0])
 		}
@@ -223,7 +269,7 @@ func serialize(g Graph) string {
 	// Drop empty maps; they will be re-created on demand if navigated to.
 	var nonEmpty []NamedMap
 	for _, m := range g.Maps {
-		if len(m.Boxes) == 0 && len(m.Edges) == 0 {
+		if len(m.Boxes) == 0 && len(m.Edges) == 0 && len(m.Texts) == 0 && len(m.Lines) == 0 {
 			continue
 		}
 		nonEmpty = append(nonEmpty, m)
@@ -244,6 +290,18 @@ func serialize(g Graph) string {
 		}
 		for _, e := range m.Edges {
 			fmt.Fprintf(&b, "edge %s %s\n", joinEndpoint(e.From, e.FromHandle), joinEndpoint(e.To, e.ToHandle))
+		}
+		if (len(m.Boxes) > 0 || len(m.Edges) > 0) && len(m.Texts) > 0 {
+			b.WriteString("\n")
+		}
+		for _, t := range m.Texts {
+			fmt.Fprintf(&b, "text %s %s %g %g\n", t.ID, quote(t.Label), t.X, t.Y)
+		}
+		if (len(m.Boxes) > 0 || len(m.Edges) > 0 || len(m.Texts) > 0) && len(m.Lines) > 0 {
+			b.WriteString("\n")
+		}
+		for _, l := range m.Lines {
+			fmt.Fprintf(&b, "line %s %g %g %g %g\n", l.ID, l.X1, l.Y1, l.X2, l.Y2)
 		}
 	}
 	return b.String()
@@ -300,7 +358,16 @@ Usage:
 }
 
 func resolveVersionString() string {
-	return version
+	if version != "dev" {
+		return version
+	}
+	var m map[string]string
+	if err := json.Unmarshal(releasePleaseManifest, &m); err == nil {
+		if v := m["."]; v != "" {
+			return v
+		}
+	}
+	return "dev"
 }
 
 func compactVersion() string {
@@ -337,15 +404,10 @@ func compactVersion() string {
 }
 
 func printVersion(w *os.File) {
-	v := version
+	v := resolveVersionString()
 	var rev, when string
 	modified := ""
 	if info, ok := debug.ReadBuildInfo(); ok {
-		// Prefer the ldflags-injected version (set on release builds).
-		// Only fall back to the module version for default `go install` builds.
-		if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			v = info.Main.Version
-		}
 		for _, s := range info.Settings {
 			switch s.Key {
 			case "vcs.revision":

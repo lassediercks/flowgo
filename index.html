@@ -22,8 +22,8 @@
   #path .seg { cursor: pointer; }
   #path .seg:hover { text-decoration: underline; }
   #path .sep { color: #aaa; }
-  #canvas {
-    position: absolute; inset: 0;
+  #bg-layer {
+    position: absolute; inset: 0; z-index: 0;
     background-color: #fafafa;
     background-image:
       linear-gradient(to right,  rgba(0,0,0,.05) 1px, transparent 1px),
@@ -31,8 +31,18 @@
       linear-gradient(to right,  rgba(0,0,0,.10) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(0,0,0,.10) 1px, transparent 1px);
     background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
-    background-position: 0 0;
   }
+  #bg-svg {
+    position: absolute; inset: 0; z-index: 1;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  #canvas {
+    position: absolute; inset: 0; z-index: 2;
+    background: transparent;
+    pointer-events: none;
+  }
+  #canvas .box, #canvas .text-item { pointer-events: auto; }
   .box {
     position: absolute; min-width: 80px; padding: 8px 12px;
     background: #fff; border: 2px solid #333; border-radius: 6px;
@@ -45,6 +55,33 @@
   .box.selected { border-color: #07f; }
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
+
+  .text-item {
+    position: absolute; padding: 4px 6px;
+    background: transparent; border: 1px dashed transparent;
+    user-select: none; cursor: grab;
+    font-size: 14px; color: #222;
+    line-height: 1.3;
+    border-radius: 4px;
+  }
+  .text-item.dragging { cursor: grabbing; }
+  .text-item.selected { border-color: #07f; background: rgba(0,119,255,.05); }
+  .text-item[contenteditable="true"] {
+    cursor: text; user-select: text; outline: none;
+    background: #ffffe0; border-color: #aaa;
+  }
+
+  .line-group .line-hit { pointer-events: stroke; cursor: grab; }
+  .line-group.dragging .line-hit { cursor: grabbing; }
+  .line-line { stroke: #555; stroke-width: 2; }
+  .line-group.selected .line-line { stroke: #07f; stroke-width: 3; }
+  .line-handle {
+    fill: #07f; stroke: #fff; stroke-width: 2;
+    pointer-events: all; cursor: crosshair;
+    display: none;
+  }
+  .line-group.selected .line-handle { display: inline; }
+  .line-handle:hover { fill: #2a7; }
 
   .handle {
     position: absolute; width: 12px; height: 12px;
@@ -129,6 +166,10 @@
   <button id="deleteBtn">Delete</button>
   <span id="path"></span>
 </div>
+<div id="bg-layer"></div>
+<svg id="bg-svg">
+  <g id="line-layer"></g>
+</svg>
 <div id="canvas"></div>
 <button id="helpBtn" title="Help (keybinds)" aria-label="Help">?</button>
 
@@ -149,6 +190,19 @@
       <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
       <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
       <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
+    </table>
+
+    <h3>Annotations</h3>
+    <table>
+      <tr><td><kbd>T</kbd></td><td>Spawn a text label at the cursor (auto-edits)</td></tr>
+      <tr><td><kbd>L</kbd></td><td>Spawn a horizontal line at the cursor</td></tr>
+      <tr><td>Click a text / line</td><td>Select it</td></tr>
+      <tr><td>Double-click a text</td><td>Edit its label</td></tr>
+      <tr><td>Drag a text / line body</td><td>Move it (with any other selected items)</td></tr>
+      <tr><td>Drag a line endpoint dot (when selected)</td><td>Resize / re-aim the line</td></tr>
+      <tr><td>Hold <kbd>Shift</kbd> while dragging</td><td>Snap to the 20px background grid (boxes, texts, line bodies, line endpoints)</td></tr>
+      <tr><td><kbd>⌥</kbd>-drag any item</td><td>Duplicate selection (boxes, texts, lines, edges)</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove selected text / line</td></tr>
     </table>
 
     <h3>Connections</h3>
@@ -216,6 +270,8 @@ let currentPath = "/";
 let state = { boxes: [], edges: [] }; // alias for the current map
 let selected = new Set();
 let band = null; // rubber-band selection state
+let lastCursor = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+let lastCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 let savedSnapshot = null;
 let undoStack = [];
 let redoStack = [];
@@ -231,16 +287,31 @@ let nearTargetId = null; // box close enough to the cursor during a link drag
 const canvas = document.getElementById("canvas");
 const svg = document.getElementById("edges");
 const edgeLayer = document.getElementById("edge-layer");
+const lineLayer = document.getElementById("line-layer");
 const ghostLine = document.getElementById("ghost-line");
 const statusEl = document.getElementById("status");
 
 const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
 
-function uid() {
+function uid(prefix) {
+  prefix = prefix || "b";
   let n = 1;
-  const used = new Set(state.boxes.map(b => b.id));
-  while (used.has("b" + n)) n++;
-  return "b" + n;
+  const used = new Set([
+    ...state.boxes.map(b => b.id),
+    ...(state.texts || []).map(t => t.id),
+    ...(state.lines || []).map(l => l.id),
+  ]);
+  while (used.has(prefix + n)) n++;
+  return prefix + n;
+}
+
+function findTextById(id) { return state.texts.find(t => t.id === id); }
+function findLineById(id) { return state.lines.find(l => l.id === id); }
+function findItem(id) {
+  const b = state.boxes.find(x => x.id === id); if (b) return { kind: "box",  ref: b };
+  const t = findTextById(id);                   if (t) return { kind: "text", ref: t };
+  const l = findLineById(id);                   if (l) return { kind: "line", ref: l };
+  return null;
 }
 
 function setStatus(s) { statusEl.textContent = s; }
@@ -266,6 +337,8 @@ function ensureMap(path) {
   }
   m.boxes ||= [];
   m.edges ||= [];
+  m.texts ||= [];
+  m.lines ||= [];
   return m;
 }
 
@@ -404,8 +477,60 @@ function renderAll() {
     canvas.appendChild(el);
     attachBoxHandlers(el, b);
   }
+  for (const t of state.texts) {
+    const el = document.createElement("div");
+    el.className = "text-item";
+    el.dataset.id = t.id;
+    el.style.left = t.x + "px";
+    el.style.top = t.y + "px";
+    el.textContent = t.label;
+    canvas.appendChild(el);
+    attachTextHandlers(el, t);
+  }
   applyClasses();
+  renderLines();
   renderEdges();
+}
+
+function renderLines() {
+  lineLayer.innerHTML = "";
+  const ns = "http://www.w3.org/2000/svg";
+  for (const l of state.lines) {
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("class", "line-group" + (selected.has(l.id) ? " selected" : ""));
+    g.dataset.id = l.id;
+
+    const hit = document.createElementNS(ns, "line");
+    hit.setAttribute("class", "line-hit");
+    hit.setAttribute("x1", l.x1); hit.setAttribute("y1", l.y1);
+    hit.setAttribute("x2", l.x2); hit.setAttribute("y2", l.y2);
+    hit.setAttribute("stroke", "transparent");
+    hit.setAttribute("stroke-width", "12");
+    g.appendChild(hit);
+
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("class", "line-line");
+    line.setAttribute("x1", l.x1); line.setAttribute("y1", l.y1);
+    line.setAttribute("x2", l.x2); line.setAttribute("y2", l.y2);
+    g.appendChild(line);
+
+    const h1 = document.createElementNS(ns, "circle");
+    h1.setAttribute("class", "line-handle");
+    h1.setAttribute("cx", l.x1); h1.setAttribute("cy", l.y1);
+    h1.setAttribute("r", 6);
+    h1.dataset.endpoint = "1";
+    g.appendChild(h1);
+
+    const h2 = document.createElementNS(ns, "circle");
+    h2.setAttribute("class", "line-handle");
+    h2.setAttribute("cx", l.x2); h2.setAttribute("cy", l.y2);
+    h2.setAttribute("r", 6);
+    h2.dataset.endpoint = "2";
+    g.appendChild(h2);
+
+    attachLineHandlers(g, line, hit, h1, h2, l);
+    lineLayer.appendChild(g);
+  }
 }
 
 function applyClasses() {
@@ -413,6 +538,12 @@ function applyClasses() {
     el.classList.toggle("selected", selected.has(el.dataset.id));
     el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
     el.classList.toggle("proximity-target", el.dataset.id === nearTargetId);
+  }
+  for (const el of canvas.querySelectorAll(".text-item")) {
+    el.classList.toggle("selected", selected.has(el.dataset.id));
+  }
+  for (const el of lineLayer.querySelectorAll(".line-group")) {
+    el.classList.toggle("selected", selected.has(el.dataset.id));
   }
 }
 
@@ -534,6 +665,279 @@ function addOrReplaceEdge(newEdge) {
   state.edges.push(newEdge);
 }
 
+// Clone all currently-selected items, replace selection with the clones,
+// and return a map { oldId -> newId } so the caller can repoint a "primary".
+// Edges are duplicated only when both endpoints are within the cloned box set.
+function cloneSelection() {
+  const idMap = new Map();
+  const sourceIds = Array.from(selected);
+  const cloneBoxIds = new Set();
+
+  for (const id of sourceIds) {
+    const b = state.boxes.find(x => x.id === id);
+    if (b) {
+      const newId = uid("b");
+      idMap.set(id, newId);
+      cloneBoxIds.add(newId);
+      state.boxes.push({ id: newId, label: b.label, x: b.x, y: b.y });
+      continue;
+    }
+    const t = findTextById(id);
+    if (t) {
+      const newId = uid("t");
+      idMap.set(id, newId);
+      state.texts.push({ id: newId, label: t.label, x: t.x, y: t.y });
+      continue;
+    }
+    const l = findLineById(id);
+    if (l) {
+      const newId = uid("l");
+      idMap.set(id, newId);
+      state.lines.push({ id: newId, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 });
+    }
+  }
+  // Duplicate edges between cloned boxes (only).
+  for (const ed of state.edges.slice()) {
+    if (idMap.has(ed.from) && idMap.has(ed.to) &&
+        cloneBoxIds.has(idMap.get(ed.from)) && cloneBoxIds.has(idMap.get(ed.to))) {
+      state.edges.push({
+        from: idMap.get(ed.from),
+        fromHandle: ed.fromHandle,
+        to: idMap.get(ed.to),
+        toHandle: ed.toHandle,
+      });
+    }
+  }
+  selected.clear();
+  for (const newId of idMap.values()) selected.add(newId);
+  renderAll();
+  applyClasses();
+  scheduleSave();
+  return idMap;
+}
+
+function makeBoxMover(b, el) {
+  return {
+    el, startX: b.x, startY: b.y,
+    apply(dx, dy, ev) {
+      let nx = this.startX + dx;
+      let ny = this.startY + dy;
+      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
+      b.x = nx;
+      b.y = ny;
+      el.style.left = b.x + "px";
+      el.style.top = b.y + "px";
+    },
+  };
+}
+
+function makeTextMover(t, el) {
+  return {
+    el, startX: t.x, startY: t.y,
+    apply(dx, dy, ev) {
+      let nx = this.startX + dx;
+      let ny = this.startY + dy;
+      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
+      t.x = nx;
+      t.y = ny;
+      el.style.left = t.x + "px";
+      el.style.top = t.y + "px";
+    },
+  };
+}
+
+const GRID = 20;
+function snap(v) { return Math.round(v / GRID) * GRID; }
+
+function makeLineMover(l, gEl, lineEl, hitEl, h1, h2) {
+  return {
+    el: gEl,
+    startX1: l.x1, startY1: l.y1,
+    startX2: l.x2, startY2: l.y2,
+    apply(dx, dy, ev) {
+      let ddx = dx, ddy = dy;
+      if (ev && ev.shiftKey) {
+        // Snap so endpoint 1 lands on the grid; endpoint 2 follows by the same offset.
+        ddx = snap(this.startX1 + dx) - this.startX1;
+        ddy = snap(this.startY1 + dy) - this.startY1;
+      }
+      l.x1 = this.startX1 + ddx; l.y1 = this.startY1 + ddy;
+      l.x2 = this.startX2 + ddx; l.y2 = this.startY2 + ddy;
+      for (const e of [lineEl, hitEl]) {
+        e.setAttribute("x1", l.x1); e.setAttribute("y1", l.y1);
+        e.setAttribute("x2", l.x2); e.setAttribute("y2", l.y2);
+      }
+      if (h1) { h1.setAttribute("cx", l.x1); h1.setAttribute("cy", l.y1); }
+      if (h2) { h2.setAttribute("cx", l.x2); h2.setAttribute("cy", l.y2); }
+    },
+  };
+}
+
+function makeLineEndpointMover(l, endpoint, refs) {
+  const startX = endpoint === 1 ? l.x1 : l.x2;
+  const startY = endpoint === 1 ? l.y1 : l.y2;
+  return {
+    el: refs.g,
+    startX, startY,
+    apply(dx, dy, ev) {
+      let nx = startX + dx;
+      let ny = startY + dy;
+      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
+      if (endpoint === 1) { l.x1 = nx; l.y1 = ny; }
+      else                { l.x2 = nx; l.y2 = ny; }
+      const xa = endpoint === 1 ? "x1" : "x2";
+      const ya = endpoint === 1 ? "y1" : "y2";
+      for (const e of [refs.line, refs.hit]) {
+        e.setAttribute(xa, nx);
+        e.setAttribute(ya, ny);
+      }
+      const h = endpoint === 1 ? refs.h1 : refs.h2;
+      h.setAttribute("cx", nx); h.setAttribute("cy", ny);
+    },
+  };
+}
+
+function collectMovers() {
+  const movers = [];
+  for (const id of selected) {
+    const b = state.boxes.find(x => x.id === id);
+    if (b) {
+      const me = canvas.querySelector(`.box[data-id="${id}"]`);
+      if (me) movers.push(makeBoxMover(b, me));
+      continue;
+    }
+    const t = findTextById(id);
+    if (t) {
+      const me = canvas.querySelector(`.text-item[data-id="${id}"]`);
+      if (me) movers.push(makeTextMover(t, me));
+      continue;
+    }
+    const l = findLineById(id);
+    if (l) {
+      const g = lineLayer.querySelector(`.line-group[data-id="${id}"]`);
+      if (g) {
+        const lineEl = g.querySelector(".line-line");
+        const hitEl = g.querySelector(".line-hit");
+        const h1 = g.querySelector('.line-handle[data-endpoint="1"]');
+        const h2 = g.querySelector('.line-handle[data-endpoint="2"]');
+        movers.push(makeLineMover(l, g, lineEl, hitEl, h1, h2));
+      }
+    }
+  }
+  return movers;
+}
+
+function attachTextHandlers(el, t) {
+  el.addEventListener("mousedown", (e) => {
+    if (el.isContentEditable) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selected.has(t.id)) {
+      if (!e.shiftKey) selected.clear();
+      selected.add(t.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
+    }
+    let primaryId = t.id;
+    if (e.altKey) {
+      const idMap = cloneSelection();
+      if (idMap.has(t.id)) primaryId = idMap.get(t.id);
+    }
+    drag = {
+      movers: collectMovers(),
+      primaryId,
+      downX: e.clientX, downY: e.clientY,
+      active: false,
+    };
+  });
+  el.addEventListener("dblclick", (e) => {
+    if (el.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selected.clear();
+    selected.add(t.id);
+    applyClasses();
+    startTextEdit(el, t);
+  });
+}
+
+function attachLineHandlers(g, lineEl, hitEl, h1, h2, l) {
+  hitEl.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selected.has(l.id)) {
+      if (!e.shiftKey) selected.clear();
+      selected.add(l.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
+    }
+    let primaryId = l.id;
+    if (e.altKey) {
+      const idMap = cloneSelection();
+      if (idMap.has(l.id)) primaryId = idMap.get(l.id);
+    }
+    drag = {
+      movers: collectMovers(),
+      primaryId,
+      downX: e.clientX, downY: e.clientY,
+      active: false,
+    };
+  });
+  for (const [hEl, endpoint] of [[h1, 1], [h2, 2]]) {
+    hEl.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // endpoint drag — single endpoint, ignores multi-selection
+      selected.clear();
+      selected.add(l.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
+      drag = {
+        movers: [makeLineEndpointMover(l, endpoint, { g, line: lineEl, hit: hitEl, h1, h2 })],
+        primaryId: l.id,
+        downX: e.clientX, downY: e.clientY,
+        active: false,
+      };
+    });
+  }
+}
+
+function startTextEdit(el, t) {
+  if (editing) return;
+  editing = el;
+  el.contentEditable = "true";
+  el.textContent = t.label;
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const finish = (commit) => {
+    el.removeEventListener("blur", onBlur);
+    el.removeEventListener("keydown", onKey);
+    el.contentEditable = "false";
+    editing = null;
+    const newLabel = el.textContent.replace(/\s+/g, " ").trim();
+    if (commit && newLabel && newLabel !== t.label) {
+      t.label = newLabel;
+      scheduleSave();
+    }
+    el.textContent = t.label;
+  };
+  const onBlur = () => finish(true);
+  const onKey = (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); el.blur(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    ev.stopPropagation();
+  };
+  el.addEventListener("blur", onBlur);
+  el.addEventListener("keydown", onKey);
+}
+
 function attachBoxHandlers(el, b) {
   el.addEventListener("mousedown", (e) => {
     if (el.isContentEditable) return;
@@ -626,54 +1030,17 @@ function attachBoxHandlers(el, b) {
       if (selectedEdge) { selectedEdge = null; renderEdges(); }
       applyClasses();
     }
-    let primaryBox = b, primaryEl = el;
+    let primaryId = b.id;
 
     // alt/option+drag: duplicate the selection and drag the clones instead.
     if (e.altKey) {
-      const sourceIds = Array.from(selected);
-      const idMap = new Map();
-      const cloneBoxes = [];
-      for (const id of sourceIds) {
-        const src = state.boxes.find(x => x.id === id);
-        if (!src) continue;
-        const newId = uid();
-        idMap.set(id, newId);
-        const clone = { id: newId, label: src.label, x: src.x, y: src.y };
-        state.boxes.push(clone);
-        cloneBoxes.push(clone);
-      }
-      // Duplicate edges that connect two cloned boxes.
-      for (const ed of state.edges.slice()) {
-        if (idMap.has(ed.from) && idMap.has(ed.to)) {
-          state.edges.push({
-            from: idMap.get(ed.from),
-            fromHandle: ed.fromHandle,
-            to: idMap.get(ed.to),
-            toHandle: ed.toHandle,
-          });
-        }
-      }
-      renderAll();
-      selected.clear();
-      for (const c of cloneBoxes) selected.add(c.id);
-      applyClasses();
-      const primaryId = idMap.get(b.id) || (cloneBoxes[0] && cloneBoxes[0].id);
-      if (primaryId) {
-        primaryBox = state.boxes.find(x => x.id === primaryId);
-        primaryEl = canvas.querySelector(`.box[data-id="${primaryId}"]`);
-      }
-      scheduleSave();
+      const idMap = cloneSelection();
+      if (idMap.has(b.id)) primaryId = idMap.get(b.id);
     }
 
-    const movers = [];
-    for (const id of selected) {
-      const mb = state.boxes.find(x => x.id === id);
-      const me = canvas.querySelector(`.box[data-id="${id}"]`);
-      if (mb && me) movers.push({ box: mb, el: me, startX: mb.x, startY: mb.y });
-    }
     drag = {
-      movers,
-      primaryBox, primaryEl,
+      movers: collectMovers(),
+      primaryId,
       downX: e.clientX, downY: e.clientY,
       active: false,
     };
@@ -692,20 +1059,17 @@ function attachBoxHandlers(el, b) {
 }
 
 document.addEventListener("mousemove", (e) => {
+  lastCursor.x = e.clientX;
+  lastCursor.y = e.clientY;
   if (drag) {
     const dx = e.clientX - drag.downX;
     const dy = e.clientY - drag.downY;
     if (!drag.active && Math.hypot(dx, dy) > 4) {
       drag.active = true;
-      for (const m of drag.movers) m.el.classList.add("dragging");
+      for (const m of drag.movers) if (m.el && m.el.classList) m.el.classList.add("dragging");
     }
     if (drag.active) {
-      for (const m of drag.movers) {
-        m.box.x = m.startX + dx;
-        m.box.y = m.startY + dy;
-        m.el.style.left = m.box.x + "px";
-        m.el.style.top = m.box.y + "px";
-      }
+      for (const m of drag.movers) m.apply(dx, dy, e);
       renderEdges();
     }
     return;
@@ -737,16 +1101,15 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", (e) => {
   if (drag) {
     const wasActive = drag.active;
-    for (const m of drag.movers) m.el.classList.remove("dragging");
-    const primary = drag.primaryBox;
-    const primaryEl = drag.primaryEl;
+    for (const m of drag.movers) if (m.el && m.el.classList) m.el.classList.remove("dragging");
+    const primaryId = drag.primaryId;
     drag = null;
     if (wasActive) {
       scheduleSave();
     } else {
-      // single-click without movement: collapse selection to this one box (no edit).
+      // single-click without movement: collapse selection to just this item.
       selected.clear();
-      selected.add(primary.id);
+      if (primaryId) selected.add(primaryId);
       if (selectedEdge) { selectedEdge = null; renderEdges(); }
       applyClasses();
     }
@@ -765,6 +1128,24 @@ document.addEventListener("mouseup", (e) => {
         const by2 = b.y + el.offsetHeight;
         if (b.x < x2 && bx2 > x1 && b.y < y2 && by2 > y1) {
           selected.add(b.id);
+        }
+      }
+      for (const t of state.texts) {
+        const el = canvas.querySelector(`.text-item[data-id="${t.id}"]`);
+        if (!el) continue;
+        const tx2 = t.x + el.offsetWidth;
+        const ty2 = t.y + el.offsetHeight;
+        if (t.x < x2 && tx2 > x1 && t.y < y2 && ty2 > y1) {
+          selected.add(t.id);
+        }
+      }
+      for (const l of state.lines) {
+        const lx1 = Math.min(l.x1, l.x2);
+        const ly1 = Math.min(l.y1, l.y2);
+        const lx2 = Math.max(l.x1, l.x2);
+        const ly2 = Math.max(l.y1, l.y2);
+        if (lx1 < x2 && lx2 > x1 && ly1 < y2 && ly2 > y1) {
+          selected.add(l.id);
         }
       }
       applyClasses();
@@ -919,22 +1300,56 @@ function createBoxAt(x, y, centerOn) {
   }
 }
 
+function createTextAt(cx, cy) {
+  const id = uid("t");
+  const t = { id, label: "text", x: cx, y: cy };
+  state.texts.push(t);
+  renderAll();
+  const el = canvas.querySelector(`.text-item[data-id="${id}"]`);
+  if (el) {
+    t.x = cx - el.offsetWidth / 2;
+    t.y = cy - el.offsetHeight / 2;
+    el.style.left = t.x + "px";
+    el.style.top = t.y + "px";
+    selected.clear();
+    selected.add(id);
+    if (selectedEdge) { selectedEdge = null; renderEdges(); }
+    applyClasses();
+    startTextEdit(el, t);
+  }
+  scheduleSave();
+}
+
+function createLineAt(cx, cy) {
+  const id = uid("l");
+  const half = 80;
+  const l = { id, x1: cx - half, y1: cy, x2: cx + half, y2: cy };
+  state.lines.push(l);
+  selected.clear();
+  selected.add(id);
+  if (selectedEdge) { selectedEdge = null; renderEdges(); }
+  renderAll();
+  scheduleSave();
+}
+
 document.getElementById("addBtn").addEventListener("click", () => {
   createBoxAt(100 + Math.random() * 400, 100 + Math.random() * 300);
 });
 
-canvas.addEventListener("dblclick", (e) => {
-  if (e.target !== canvas) return;
+document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
   createBoxAt(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
 });
 
 document.getElementById("deleteBtn").addEventListener("click", () => {
   if (selected.size === 0) { setStatus("nothing selected"); return; }
   const ids = Array.from(selected);
+  const boxIds = ids.filter(id => state.boxes.some(b => b.id === id));
   state.boxes = state.boxes.filter(b => !selected.has(b.id));
   state.edges = state.edges.filter(e => !selected.has(e.from) && !selected.has(e.to));
+  state.texts = state.texts.filter(t => !selected.has(t.id));
+  state.lines = state.lines.filter(l => !selected.has(l.id));
   // Drop each deleted box's submap and any descendants.
-  for (const id of ids) {
+  for (const id of boxIds) {
     const removedPath = currentPath === "/" ? "/" + id : currentPath + "/" + id;
     graph.maps = graph.maps.filter(m =>
       m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
@@ -977,6 +1392,16 @@ document.addEventListener("keydown", (e) => {
     redo();
     return;
   }
+  if (!mod && !e.altKey && (e.key === "t" || e.key === "T")) {
+    e.preventDefault();
+    createTextAt(lastCursor.x, lastCursor.y);
+    return;
+  }
+  if (!mod && !e.altKey && (e.key === "l" || e.key === "L")) {
+    e.preventDefault();
+    createLineAt(lastCursor.x, lastCursor.y);
+    return;
+  }
   if (e.key === "Escape") {
     if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
     selected.clear();
@@ -1002,8 +1427,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-canvas.addEventListener("mousedown", (e) => {
-  if (e.target !== canvas) return;
+document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   if (!e.shiftKey) selected.clear();
   if (selectedEdge) { selectedEdge = null; renderEdges(); }
@@ -1018,10 +1442,35 @@ canvas.addEventListener("mousedown", (e) => {
   band = { startX: e.clientX, startY: e.clientY, el: bandEl };
 });
 
+// On window resize, shift every item across every map by the change in viewport
+// center so the content stays anchored to the middle of the window.
+window.addEventListener("resize", () => {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const dx = cx - lastCenter.x;
+  const dy = cy - lastCenter.y;
+  lastCenter = { x: cx, y: cy };
+  if (dx === 0 && dy === 0) return;
+  if (!graph || !graph.maps) return;
+  for (const m of graph.maps) {
+    for (const b of (m.boxes || [])) { b.x += dx; b.y += dy; }
+    for (const t of (m.texts || [])) { t.x += dx; t.y += dy; }
+    for (const l of (m.lines || [])) {
+      l.x1 += dx; l.y1 += dy;
+      l.x2 += dx; l.y2 += dy;
+    }
+  }
+  renderAll();
+  scheduleSave();
+});
+
 load();
 fetch("/version")
-  .then(r => r.text())
-  .then(t => { document.getElementById("version").textContent = "flowgo " + t.trim(); })
+  .then(r => r.ok ? r.text() : "")
+  .then(t => {
+    const v = t.trim();
+    if (v) document.getElementById("version").textContent = "flowgo " + v;
+  })
   .catch(() => {});
 </script>
 </body>
