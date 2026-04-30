@@ -1,12 +1,12 @@
 map /
-box b1 Versioning 1676.2759604114208 521.4856902282373
-box b2 FlowGo 1149 411.5
-box b3 Mapping 782 590.5
+box b1 Versioning 1306.2759604114208 615.4856902282373
+box b2 FlowGo 1141 426.5
+box b3 Mapping 954 622.5
 box b4 Layering 1128 613.5
 
 edge b2:b b4:t
 edge b2:r b1:t
-edge b3:tr b2:l
+edge b2:l b3:t
 
 map /b1
 box b1 Versioning 1208.7265659714383 421.7431936733593
