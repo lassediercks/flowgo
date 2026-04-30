@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.4](https://github.com/lassediercks/flowgo/compare/0.0.3...0.0.4) (2026-04-30)
+
+
+### Features
+
+* lines and text ([0558475](https://github.com/lassediercks/flowgo/commit/0558475d4d8701c2441f14f12d8274314d118183))
+* panning ([8af520d](https://github.com/lassediercks/flowgo/commit/8af520daad49f51db4beaa9b54b29f86a8c23a0e))
+
 ## [0.0.3](https://github.com/lassediercks/flowgo/compare/0.0.2...0.0.3) (2026-04-30)
 
 
