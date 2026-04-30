@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2](https://github.com/lassediercks/flowgo/compare/0.0.1...0.0.2) (2026-04-30)
+
+
+### Features
+
+* proximity handlers ([fba3bc6](https://github.com/lassediercks/flowgo/commit/fba3bc66fdffa4466a20f9beb24555ed33f878af))
+* remove the connect button ([02181be](https://github.com/lassediercks/flowgo/commit/02181be5448448fb4987e0124347c6e26618e29e))
+
 ## 0.0.1 (2026-04-30)
 
 
