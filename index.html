@@ -17,7 +17,17 @@
   #path .seg { cursor: pointer; }
   #path .seg:hover { text-decoration: underline; }
   #path .sep { color: #aaa; }
-  #canvas { position: absolute; inset: 0; background: #fafafa; }
+  #canvas {
+    position: absolute; inset: 0;
+    background-color: #fafafa;
+    background-image:
+      linear-gradient(to right,  rgba(0,0,0,.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.05) 1px, transparent 1px),
+      linear-gradient(to right,  rgba(0,0,0,.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.10) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+    background-position: 0 0;
+  }
   body.connect #canvas { cursor: crosshair; }
   .box {
     position: absolute; min-width: 80px; padding: 8px 12px;
@@ -25,6 +35,7 @@
     user-select: none;
     box-shadow: 0 1px 2px rgba(0,0,0,.1);
     cursor: grab;
+    text-align: center;
   }
   .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
   .box.connect-source { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.25); }
@@ -42,20 +53,70 @@
   .box:hover .handle, .handle.active { opacity: 1; }
   .box[contenteditable="true"] .handle { display: none; }
 
-  .h-t  { top: -8px;    left: 50%;    transform: translateX(-50%); }
-  .h-r  { top: 50%;     right: -8px;  transform: translateY(-50%); }
-  .h-b  { bottom: -8px; left: 50%;    transform: translateX(-50%); }
-  .h-l  { top: 50%;     left: -8px;   transform: translateY(-50%); }
-  .h-tl { top: -8px;    left: -8px; }
-  .h-tr { top: -8px;    right: -8px; }
-  .h-bl { bottom: -8px; left: -8px; }
-  .h-br { bottom: -8px; right: -8px; }
+  .h-t  { top: -20px;    left: 50%;     transform: translateX(-50%); }
+  .h-r  { top: 50%;      right: -20px;  transform: translateY(-50%); }
+  .h-b  { bottom: -20px; left: 50%;     transform: translateX(-50%); }
+  .h-l  { top: 50%;      left: -20px;   transform: translateY(-50%); }
+  .h-tl { top: -20px;    left: -20px; }
+  .h-tr { top: -20px;    right: -20px; }
+  .h-bl { bottom: -20px; left: -20px; }
+  .h-br { bottom: -20px; right: -20px; }
 
   svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 4; }
   .edge-group { pointer-events: none; }
   .edge-hit { pointer-events: stroke; cursor: pointer; }
   .edge-line { stroke: #333; stroke-width: 2; }
   .edge-group.selected .edge-line { stroke: #07f; stroke-width: 3; }
+  .selection-band {
+    position: fixed; z-index: 6; pointer-events: none;
+    border: 1px dashed #07f; background: rgba(0,119,255,.08);
+  }
+
+  #helpBtn {
+    position: fixed; top: 8px; right: 8px; z-index: 11;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #fff; border: 1px solid #ccc;
+    font-size: 16px; font-weight: bold; color: #555;
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    line-height: 1;
+  }
+  #helpBtn:hover { background: #f0f0f0; }
+
+  #helpOverlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #helpOverlay.hidden { display: none; }
+  #helpModal {
+    background: #fff; border-radius: 10px; padding: 24px 28px;
+    max-width: 720px; width: 90%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+    position: relative;
+  }
+  #helpModal h2 { margin: 0 0 4px 0; font-size: 18px; }
+  #helpModal .sub { color: #777; font-size: 12px; margin-bottom: 14px; }
+  #helpModal h3 {
+    margin: 18px 0 6px 0; color: #555; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .8px;
+  }
+  #helpModal table { border-collapse: collapse; width: 100%; }
+  #helpModal td { padding: 5px 10px 5px 0; vertical-align: top; font-size: 13px; }
+  #helpModal td:first-child { white-space: nowrap; color: #333; width: 1%; }
+  #helpModal td:last-child { color: #555; }
+  #helpModal kbd {
+    display: inline-block; padding: 1px 6px;
+    border: 1px solid #ccc; border-bottom-width: 2px;
+    border-radius: 4px; background: #f7f7f7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    color: #333;
+  }
+  #helpClose {
+    position: absolute; top: 8px; right: 12px;
+    background: transparent; border: 0; font-size: 24px;
+    cursor: pointer; color: #888; line-height: 1; padding: 0;
+  }
+  #helpClose:hover { color: #333; }
   .help { color: #666; font-size: 12px; margin-left: 8px; }
 </style>
 </head>
@@ -66,9 +127,70 @@
   <button id="connectBtn">Connect</button>
   <button id="deleteBtn">Delete</button>
   <span id="path"></span>
-  <span class="help">click to edit · drag to move · drag dot to connect · middle-click or ⌘+click to enter submap</span>
 </div>
 <div id="canvas"></div>
+<button id="helpBtn" title="Help (keybinds)" aria-label="Help">?</button>
+
+<div id="helpOverlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div id="helpModal">
+    <button id="helpClose" aria-label="Close help">×</button>
+    <h2 id="helpTitle">flowgo — keybinds &amp; capabilities</h2>
+    <div class="sub">Tip: <kbd>⌘</kbd> on macOS, <kbd>Ctrl</kbd> on Windows / Linux.</div>
+
+    <h3>Boxes</h3>
+    <table>
+      <tr><td>Double-click empty canvas</td><td>Add a new box at the cursor (auto-edits the label)</td></tr>
+      <tr><td><kbd>+ Box</kbd> button</td><td>Add a new box at a random position</td></tr>
+      <tr><td>Click a box</td><td>Select it (replaces the current selection)</td></tr>
+      <tr><td>Double-click a box</td><td>Edit its label inline</td></tr>
+      <tr><td><kbd>Enter</kbd> while editing</td><td>Commit the new label</td></tr>
+      <tr><td><kbd>Escape</kbd> while editing</td><td>Cancel the edit</td></tr>
+      <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
+      <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
+    </table>
+
+    <h3>Connections</h3>
+    <table>
+      <tr><td>Drag a blue dot to another box</td><td>Create a connection between the two boxes</td></tr>
+      <tr><td>Drag a blue dot into empty space</td><td>Spawn a new box at the cursor and connect to it</td></tr>
+      <tr><td><kbd>Connect</kbd> button → click two boxes</td><td>Create a connection (auto-picks the nearest handles)</td></tr>
+      <tr><td>Click an edge</td><td>Select it (turns blue + thicker)</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd> on edge</td><td>Remove the edge</td></tr>
+      <tr><td>(creating a new edge)</td><td>Replaces any prior edge between the same pair (undirected)</td></tr>
+    </table>
+
+    <h3>Selection</h3>
+    <table>
+      <tr><td>Drag on empty canvas</td><td>Rubber-band select all boxes intersecting the rectangle</td></tr>
+      <tr><td><kbd>Shift</kbd>-drag on empty canvas</td><td>Add to the existing selection instead of replacing</td></tr>
+      <tr><td>Click on empty canvas</td><td>Clear the selection</td></tr>
+    </table>
+
+    <h3>Submaps</h3>
+    <table>
+      <tr><td><kbd>⌘</kbd>-click a box (macOS)</td><td>Enter that box's submap</td></tr>
+      <tr><td>Middle-click a box</td><td>Enter that box's submap</td></tr>
+      <tr><td><kbd>↑ Up</kbd> button</td><td>Navigate one level up</td></tr>
+      <tr><td>Click a breadcrumb segment</td><td>Jump to that level</td></tr>
+    </table>
+
+    <h3>History</h3>
+    <table>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo (up to 100 steps; each save is one step)</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo (alternate)</td></tr>
+    </table>
+
+    <h3>Other</h3>
+    <table>
+      <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel connect mode · cancel link drag · clear selection</td></tr>
+      <tr><td><kbd>?</kbd> button (top right)</td><td>Open / close this help</td></tr>
+      <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
+    </table>
+  </div>
+</div>
+
 <svg id="edges">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -90,7 +212,12 @@
 let graph = { maps: [] };
 let currentPath = "/";
 let state = { boxes: [], edges: [] }; // alias for the current map
-let selected = null;
+let selected = new Set();
+let band = null; // rubber-band selection state
+let savedSnapshot = null;
+let undoStack = [];
+let redoStack = [];
+const UNDO_LIMIT = 100;
 let selectedEdge = null; // reference to an entry in state.edges
 let connectFrom = null;
 let mode = "normal";
@@ -124,6 +251,9 @@ async function load() {
   if (!graph || !graph.maps || graph.maps.length === 0) {
     graph = { maps: [{ path: "/", boxes: [], edges: [] }] };
   }
+  savedSnapshot = JSON.stringify(graph);
+  undoStack = [];
+  redoStack = [];
   setCurrentPath("/");
   setStatus("loaded");
 }
@@ -142,7 +272,7 @@ function ensureMap(path) {
 function setCurrentPath(p) {
   currentPath = p;
   state = ensureMap(p);
-  selected = null;
+  selected.clear();
   selectedEdge = null;
   if (mode === "connect") setMode("normal");
   renderAll();
@@ -179,7 +309,7 @@ function renderPath() {
     }
     el.appendChild(seg);
   });
-  document.getElementById("upBtn").disabled = (currentPath === "/");
+  document.getElementById("upBtn").style.display = (currentPath === "/") ? "none" : "";
 }
 
 function enterSubmap(boxId) {
@@ -200,13 +330,61 @@ function scheduleSave() {
   saveTimer = setTimeout(save, 200);
 }
 
-async function save() {
+async function saveBody(body) {
   await fetch("/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(graph),
+    body,
   });
   setStatus("saved");
+}
+
+async function save() {
+  const body = JSON.stringify(graph);
+  if (savedSnapshot !== null && body !== savedSnapshot) {
+    undoStack.push(savedSnapshot);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack = [];
+  }
+  savedSnapshot = body;
+  await saveBody(body);
+}
+
+function applyGraphSnapshot(body) {
+  graph = JSON.parse(body);
+  selected.clear();
+  selectedEdge = null;
+  const target = graph.maps.some(m => m.path === currentPath) ? currentPath : "/";
+  setCurrentPath(target);
+}
+
+function undo() {
+  // Flush any pending save so the snapshot reflects the user's latest change before we step back.
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  const body = JSON.stringify(graph);
+  if (savedSnapshot !== null && body !== savedSnapshot) {
+    undoStack.push(savedSnapshot);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack = [];
+    savedSnapshot = body;
+  }
+  if (undoStack.length === 0) { setStatus("nothing to undo"); return; }
+  const prev = undoStack.pop();
+  redoStack.push(savedSnapshot);
+  savedSnapshot = prev;
+  applyGraphSnapshot(prev);
+  saveBody(prev);
+  setStatus("undo (" + undoStack.length + " left)");
+}
+
+function redo() {
+  if (redoStack.length === 0) { setStatus("nothing to redo"); return; }
+  const next = redoStack.pop();
+  undoStack.push(savedSnapshot);
+  savedSnapshot = next;
+  applyGraphSnapshot(next);
+  saveBody(next);
+  setStatus("redo");
 }
 
 function renderAll() {
@@ -233,7 +411,7 @@ function renderAll() {
 
 function applyClasses() {
   for (const el of canvas.querySelectorAll(".box")) {
-    el.classList.toggle("selected", el.dataset.id === selected);
+    el.classList.toggle("selected", selected.has(el.dataset.id));
     el.classList.toggle("connect-source", el.dataset.id === connectFrom);
     el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
   }
@@ -274,7 +452,7 @@ function renderEdges() {
     g.addEventListener("mousedown", (ev) => {
       ev.stopPropagation();
       selectedEdge = e;
-      selected = null;
+      selected.clear();
       applyClasses();
       renderEdges();
       setStatus("edge selected — press Delete to remove");
@@ -284,7 +462,7 @@ function renderEdges() {
   }
 }
 
-const HANDLE_OFFSET = 8; // matches the visual offset of .handle elements outside the box border
+const HANDLE_OFFSET = 14; // line endpoint sits at the visible center of the .handle dot
 
 function handleAnchor(el, b, code) {
   const w = el.offsetWidth, h = el.offsetHeight;
@@ -341,11 +519,60 @@ function attachBoxHandlers(el, b) {
     }
     if (e.button !== 0) return;
 
-    // handle click? start link-drag.
+    // handle click? start link-drag (new edge, or re-route an existing edge).
     if (e.target.classList.contains("handle")) {
       e.preventDefault();
       e.stopPropagation();
       const code = e.target.dataset.handle;
+
+      // Is there an existing edge anchored to this exact box+handle? If so, pick it up.
+      let pickedEdge = null;
+      let anchoredId = null;
+      let anchoredHandle = "";
+      for (let i = state.edges.length - 1; i >= 0; i--) {
+        const ed = state.edges[i];
+        if (ed.from === b.id && ed.fromHandle === code) {
+          pickedEdge = ed; anchoredId = ed.to;   anchoredHandle = ed.toHandle   || ""; break;
+        }
+        if (ed.to === b.id && ed.toHandle === code) {
+          pickedEdge = ed; anchoredId = ed.from; anchoredHandle = ed.fromHandle || ""; break;
+        }
+      }
+
+      if (pickedEdge) {
+        const idx = state.edges.indexOf(pickedEdge);
+        if (idx >= 0) state.edges.splice(idx, 1);
+        const anchoredBox = state.boxes.find(x => x.id === anchoredId);
+        const anchoredEl = canvas.querySelector(`.box[data-id="${anchoredId}"]`);
+        if (!anchoredBox || !anchoredEl) {
+          // Anchored end vanished; bail out (and put the edge back).
+          state.edges.push(pickedEdge);
+          renderEdges();
+          return;
+        }
+        const fallbackTowardX = b.x + el.offsetWidth / 2;
+        const fallbackTowardY = b.y + el.offsetHeight / 2;
+        const code2 = anchoredHandle || nearestHandle(anchoredBox, anchoredEl, fallbackTowardX, fallbackTowardY);
+        const [hx, hy] = handleAnchor(anchoredEl, anchoredBox, code2);
+        link = {
+          fromId: anchoredId,
+          fromHandle: code2,
+          startX: hx, startY: hy,
+          handleEl: e.target,
+          rerouting: true,
+        };
+        e.target.classList.add("active");
+        ghostLine.setAttribute("x1", hx);
+        ghostLine.setAttribute("y1", hy);
+        ghostLine.setAttribute("x2", e.clientX);
+        ghostLine.setAttribute("y2", e.clientY);
+        ghostLine.style.display = "";
+        renderEdges();
+        setStatus("re-routing edge — drop on a box, or in empty space");
+        return;
+      }
+
+      // No existing edge: start a new connection from this handle.
       const [hx, hy] = handleAnchor(el, b, code);
       link = {
         fromId: b.id,
@@ -363,15 +590,78 @@ function attachBoxHandlers(el, b) {
       return;
     }
 
-    // body drag
+    // body drag (single or multi-select)
     e.preventDefault();
     e.stopPropagation();
+    // If this box isn't already in the selection, replace the selection with just it.
+    if (!selected.has(b.id)) {
+      if (!e.shiftKey) selected.clear();
+      selected.add(b.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
+    }
+    let primaryBox = b, primaryEl = el;
+
+    // alt/option+drag: duplicate the selection and drag the clones instead.
+    if (e.altKey) {
+      const sourceIds = Array.from(selected);
+      const idMap = new Map();
+      const cloneBoxes = [];
+      for (const id of sourceIds) {
+        const src = state.boxes.find(x => x.id === id);
+        if (!src) continue;
+        const newId = uid();
+        idMap.set(id, newId);
+        const clone = { id: newId, label: src.label, x: src.x, y: src.y };
+        state.boxes.push(clone);
+        cloneBoxes.push(clone);
+      }
+      // Duplicate edges that connect two cloned boxes.
+      for (const ed of state.edges.slice()) {
+        if (idMap.has(ed.from) && idMap.has(ed.to)) {
+          state.edges.push({
+            from: idMap.get(ed.from),
+            fromHandle: ed.fromHandle,
+            to: idMap.get(ed.to),
+            toHandle: ed.toHandle,
+          });
+        }
+      }
+      renderAll();
+      selected.clear();
+      for (const c of cloneBoxes) selected.add(c.id);
+      applyClasses();
+      const primaryId = idMap.get(b.id) || (cloneBoxes[0] && cloneBoxes[0].id);
+      if (primaryId) {
+        primaryBox = state.boxes.find(x => x.id === primaryId);
+        primaryEl = canvas.querySelector(`.box[data-id="${primaryId}"]`);
+      }
+      scheduleSave();
+    }
+
+    const movers = [];
+    for (const id of selected) {
+      const mb = state.boxes.find(x => x.id === id);
+      const me = canvas.querySelector(`.box[data-id="${id}"]`);
+      if (mb && me) movers.push({ box: mb, el: me, startX: mb.x, startY: mb.y });
+    }
     drag = {
-      box: b, el,
+      movers,
+      primaryBox, primaryEl,
       downX: e.clientX, downY: e.clientY,
-      startX: b.x, startY: b.y,
       active: false,
     };
+  });
+
+  el.addEventListener("dblclick", (e) => {
+    if (el.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selected.clear();
+    selected.add(b.id);
+    if (selectedEdge) { selectedEdge = null; renderEdges(); }
+    applyClasses();
+    startEdit(el, b);
   });
 }
 
@@ -381,15 +671,28 @@ document.addEventListener("mousemove", (e) => {
     const dy = e.clientY - drag.downY;
     if (!drag.active && Math.hypot(dx, dy) > 4) {
       drag.active = true;
-      drag.el.classList.add("dragging");
+      for (const m of drag.movers) m.el.classList.add("dragging");
     }
     if (drag.active) {
-      drag.box.x = drag.startX + dx;
-      drag.box.y = drag.startY + dy;
-      drag.el.style.left = drag.box.x + "px";
-      drag.el.style.top = drag.box.y + "px";
+      for (const m of drag.movers) {
+        m.box.x = m.startX + dx;
+        m.box.y = m.startY + dy;
+        m.el.style.left = m.box.x + "px";
+        m.el.style.top = m.box.y + "px";
+      }
       renderEdges();
     }
+    return;
+  }
+  if (band) {
+    const x = Math.min(band.startX, e.clientX);
+    const y = Math.min(band.startY, e.clientY);
+    const w = Math.abs(e.clientX - band.startX);
+    const h = Math.abs(e.clientY - band.startY);
+    band.el.style.left = x + "px";
+    band.el.style.top = y + "px";
+    band.el.style.width = w + "px";
+    band.el.style.height = h + "px";
     return;
   }
   if (link) {
@@ -406,21 +709,46 @@ document.addEventListener("mousemove", (e) => {
 
 document.addEventListener("mouseup", (e) => {
   if (drag) {
-    const { box, el, active } = drag;
+    const wasActive = drag.active;
+    for (const m of drag.movers) m.el.classList.remove("dragging");
+    const primary = drag.primaryBox;
+    const primaryEl = drag.primaryEl;
     drag = null;
-    el.classList.remove("dragging");
-    if (active) {
+    if (wasActive) {
       scheduleSave();
     } else {
       if (mode === "connect") {
-        handleConnectClick(box);
+        handleConnectClick(primary);
       } else {
-        selected = box.id;
+        // single-click without movement: collapse selection to this one box (no edit).
+        selected.clear();
+        selected.add(primary.id);
         if (selectedEdge) { selectedEdge = null; renderEdges(); }
         applyClasses();
-        startEdit(el, box);
       }
     }
+    return;
+  }
+  if (band) {
+    const x1 = Math.min(band.startX, e.clientX);
+    const y1 = Math.min(band.startY, e.clientY);
+    const x2 = Math.max(band.startX, e.clientX);
+    const y2 = Math.max(band.startY, e.clientY);
+    if (x2 - x1 > 2 || y2 - y1 > 2) {
+      for (const b of state.boxes) {
+        const el = canvas.querySelector(`.box[data-id="${b.id}"]`);
+        if (!el) continue;
+        const bx2 = b.x + el.offsetWidth;
+        const by2 = b.y + el.offsetHeight;
+        if (b.x < x2 && bx2 > x1 && b.y < y2 && by2 > y1) {
+          selected.add(b.id);
+        }
+      }
+      applyClasses();
+      if (selected.size > 0) setStatus(selected.size + " selected");
+    }
+    band.el.remove();
+    band = null;
     return;
   }
   if (link) {
@@ -434,9 +762,9 @@ document.addEventListener("mouseup", (e) => {
       // Otherwise pick the handle closest to the source anchor.
       let toCode = null;
       const stack = document.elementsFromPoint(e.clientX, e.clientY);
-      for (const el of stack) {
-        if (el.classList && el.classList.contains("handle") && el.parentElement === target) {
-          toCode = el.dataset.handle;
+      for (const stackEl of stack) {
+        if (stackEl.classList && stackEl.classList.contains("handle") && stackEl.parentElement === target) {
+          toCode = stackEl.dataset.handle;
           break;
         }
       }
@@ -447,7 +775,27 @@ document.addEventListener("mouseup", (e) => {
       scheduleSave();
       renderEdges();
     } else {
-      setStatus("cancelled");
+      // Dropped in empty space: spawn a new box at the cursor and connect to it.
+      const newId = uid();
+      const provisionalX = e.clientX, provisionalY = e.clientY;
+      const newBox = { id: newId, label: "new", x: provisionalX, y: provisionalY };
+      state.boxes.push(newBox);
+      renderAll();
+      const newEl = canvas.querySelector(`.box[data-id="${newId}"]`);
+      if (newEl) {
+        newBox.x = e.clientX - newEl.offsetWidth / 2;
+        newBox.y = e.clientY - newEl.offsetHeight / 2;
+        newEl.style.left = newBox.x + "px";
+        newEl.style.top = newBox.y + "px";
+        const toCode = nearestHandle(newBox, newEl, link.startX, link.startY);
+        addOrReplaceEdge({ from: link.fromId, fromHandle: link.fromHandle, to: newId, toHandle: toCode });
+        renderEdges();
+        selected.clear();
+        selected.add(newId);
+        applyClasses();
+        startEdit(newEl, newBox);
+      }
+      scheduleSave();
     }
     link = null;
     if (dropTargetId) { dropTargetId = null; applyClasses(); }
@@ -547,20 +895,35 @@ function setMode(m) {
   applyClasses();
 }
 
-document.getElementById("addBtn").addEventListener("click", () => {
-  const x = 100 + Math.random() * 400;
-  const y = 100 + Math.random() * 300;
+function createBoxAt(x, y, centerOn) {
   const id = uid();
   const b = { id, label: "new", x, y };
   state.boxes.push(b);
-  scheduleSave();
   renderAll();
   const el = canvas.querySelector(`.box[data-id="${id}"]`);
+  if (el && centerOn) {
+    b.x = centerOn.x - el.offsetWidth / 2;
+    b.y = centerOn.y - el.offsetHeight / 2;
+    el.style.left = b.x + "px";
+    el.style.top = b.y + "px";
+  }
+  scheduleSave();
   if (el) {
-    selected = id;
+    selected.clear();
+    selected.add(id);
+    if (selectedEdge) { selectedEdge = null; renderEdges(); }
     applyClasses();
     startEdit(el, b);
   }
+}
+
+document.getElementById("addBtn").addEventListener("click", () => {
+  createBoxAt(100 + Math.random() * 400, 100 + Math.random() * 300);
+});
+
+canvas.addEventListener("dblclick", (e) => {
+  if (e.target !== canvas) return;
+  createBoxAt(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
 });
 
 connectBtn.addEventListener("click", () => {
@@ -568,32 +931,58 @@ connectBtn.addEventListener("click", () => {
 });
 
 document.getElementById("deleteBtn").addEventListener("click", () => {
-  if (!selected) { setStatus("nothing selected"); return; }
-  state.boxes = state.boxes.filter(b => b.id !== selected);
-  state.edges = state.edges.filter(e => e.from !== selected && e.to !== selected);
-  // Drop the deleted box's submap and any descendants.
-  const removedPath = currentPath === "/" ? "/" + selected : currentPath + "/" + selected;
-  graph.maps = graph.maps.filter(m =>
-    m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
-  // Persist the alias, since filtering may have removed the current map (it shouldn't, but be safe).
+  if (selected.size === 0) { setStatus("nothing selected"); return; }
+  const ids = Array.from(selected);
+  state.boxes = state.boxes.filter(b => !selected.has(b.id));
+  state.edges = state.edges.filter(e => !selected.has(e.from) && !selected.has(e.to));
+  // Drop each deleted box's submap and any descendants.
+  for (const id of ids) {
+    const removedPath = currentPath === "/" ? "/" + id : currentPath + "/" + id;
+    graph.maps = graph.maps.filter(m =>
+      m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
+  }
   state = ensureMap(currentPath);
-  selected = null;
+  selected.clear();
   scheduleSave();
   renderAll();
 });
 
 document.getElementById("upBtn").addEventListener("click", goUp);
 
+const helpOverlay = document.getElementById("helpOverlay");
+function setHelpOpen(open) { helpOverlay.classList.toggle("hidden", !open); }
+document.getElementById("helpBtn").addEventListener("click", () => setHelpOpen(true));
+document.getElementById("helpClose").addEventListener("click", () => setHelpOpen(false));
+helpOverlay.addEventListener("mousedown", (e) => {
+  if (e.target === helpOverlay) setHelpOpen(false);
+});
+
 // Suppress middle-click autoscroll/paste so we can use it for navigation.
 window.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
 window.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); }, true);
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !helpOverlay.classList.contains("hidden")) {
+    setHelpOpen(false);
+    return;
+  }
   if (editing) return;
+  // undo / redo (Cmd on macOS, Ctrl elsewhere; Cmd+Shift+Z or Ctrl+Y for redo)
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.altKey && (e.key === "z" || e.key === "Z")) {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if (mod && !e.altKey && (e.key === "y" || e.key === "Y")) {
+    e.preventDefault();
+    redo();
+    return;
+  }
   if (e.key === "Escape") {
     if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); }
     if (mode === "connect") setMode("normal");
-    selected = null;
+    selected.clear();
     selectedEdge = null;
     applyClasses();
     renderEdges();
@@ -609,7 +998,7 @@ document.addEventListener("keydown", (e) => {
       setStatus("edge removed");
       return;
     }
-    if (selected) {
+    if (selected.size > 0) {
       e.preventDefault();
       document.getElementById("deleteBtn").click();
     }
@@ -618,10 +1007,19 @@ document.addEventListener("keydown", (e) => {
 
 canvas.addEventListener("mousedown", (e) => {
   if (e.target !== canvas) return;
+  if (e.button !== 0) return;
   if (mode === "connect") return;
-  selected = null;
+  if (!e.shiftKey) selected.clear();
   if (selectedEdge) { selectedEdge = null; renderEdges(); }
   applyClasses();
+  const bandEl = document.createElement("div");
+  bandEl.className = "selection-band";
+  bandEl.style.left = e.clientX + "px";
+  bandEl.style.top = e.clientY + "px";
+  bandEl.style.width = "0px";
+  bandEl.style.height = "0px";
+  document.body.appendChild(bandEl);
+  band = { startX: e.clientX, startY: e.clientY, el: bandEl };
 });
 
 load();

@@ -1,0 +1,27 @@
+map /
+box b1 Versioning 1676.2759604114208 521.4856902282373
+box b2 FlowGo 1187 341.5
+box b3 Mapping 784 561.5
+box b4 Layering 1182 618.5
+
+edge b2:b b4:t
+edge b2:r b1:t
+edge b2:l b3:t
+
+map /b1
+box b1 Versioning 1208.7265659714383 421.7431936733593
+box b2 Controlled 1239 636.5
+box b3 Git 960 628.5
+box b4 Immutable 1549 600.5
+
+edge b1:b b2:tl
+edge b1:bl b3:tr
+edge b1:br b4:tl
+
+map /b3
+box b2 Mapping 1138 421.5
+box b3 Explorative 928 620.5
+box b1 Abstract 1262 624.5
+
+edge b2:b b3:t
+edge b2:b b1:tl

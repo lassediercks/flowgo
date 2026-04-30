@@ -40,17 +40,21 @@ and tries to open your browser. If the file doesn't exist it's created empty.
 
 ## Editor
 
-| Action                                     | Result                                  |
-|--------------------------------------------|-----------------------------------------|
-| `+ Box`                                    | Add a new box, immediately editable     |
-| Click a box                                | Edit its label inline (Enter / Escape)  |
-| Drag a box body                            | Move it                                 |
-| Hover a box → drag a blue dot to another  | Create a connection between two boxes   |
-| `Connect` button → click source, target    | Create a connection (auto-picks handles)|
-| Click an edge                              | Select it (turns blue + thicker)        |
-| `Delete` / `Backspace` on selected box/edge| Remove it                               |
-| Middle-click or ⌘-click a box (Cmd on macOS)| Enter its submap                        |
-| `↑ Up` / breadcrumb segments               | Navigate back up                        |
+| Action                                     | Result                                       |
+|--------------------------------------------|----------------------------------------------|
+| `+ Box` / double-click empty canvas        | Add a new box (centered at cursor) and edit  |
+| Click a box                                | Select it                                    |
+| Double-click a box                         | Edit its label inline (Enter / Escape)       |
+| Drag a box body                            | Move it (and any other boxes selected)       |
+| ⌥-drag a box body                          | Duplicate the selection and drag the copies  |
+| Drag on empty canvas                       | Rubber-band select boxes; Shift to add       |
+| Drag a blue dot to another box / handle   | Create a connection (replaces any prior one) |
+| Drag a blue dot into empty space           | Spawn a new box and connect to it            |
+| `Connect` button → click source, target    | Create a connection (auto-picks handles)     |
+| Click an edge                              | Select it (turns blue + thicker)             |
+| `Delete` / `Backspace`                     | Remove all selected boxes / the selected edge|
+| Middle-click or ⌘-click a box              | Enter its submap                             |
+| `↑ Up` / breadcrumb segments               | Navigate back up                             |
 
 Connections are undirected and at most one exists between any pair of boxes —
 creating a new one between A and B replaces any prior connection.
