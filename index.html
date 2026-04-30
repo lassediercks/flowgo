@@ -1140,8 +1140,8 @@ document.addEventListener("mousemove", (e) => {
     return;
   }
   if (link) {
-    ghostLine.setAttribute("x2", e.clientX);
-    ghostLine.setAttribute("y2", e.clientY);
+    ghostLine.setAttribute("x2", toDataX(e.clientX));
+    ghostLine.setAttribute("y2", toDataY(e.clientY));
     const target = findBoxAt(e.clientX, e.clientY);
     const id = target && target.dataset.id !== link.fromId ? target.dataset.id : null;
     if (id !== dropTargetId) {
