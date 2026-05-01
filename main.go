@@ -38,7 +38,7 @@ var (
 
 var version = "dev"
 
-//go:embed index.html
+//go:embed dist/index.html
 var indexHTML string
 
 //go:embed .release-please-manifest.json
