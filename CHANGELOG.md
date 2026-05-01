@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.11](https://github.com/lassediercks/flowgo/compare/0.0.10...0.0.11) (2026-05-01)
+
+
+### Features
+
+* trigger new release ([d557446](https://github.com/lassediercks/flowgo/commit/d55744693d01125dcbae86e2830a50f4c7438ba4))
+
 ## [0.0.10](https://github.com/lassediercks/flowgo/compare/0.0.9...0.0.10) (2026-05-01)
 
 
