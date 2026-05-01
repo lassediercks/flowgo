@@ -1,13 +1,13 @@
 map /
 box b1 Versioning 1145.7759604114208 697.4856902282373
-box b2 FlowGo 1011 206
+box b2 FlowGo 1013 239
 box b3 Mapping 910.5 484.5
 box b4 Layering 570.5 586.5
 box b6 Abstraction 873 672.5
 box b7 "Simple Tools" 1291 342.5
 box b8 "Open Format" 1379.5 588.75
-box b5 "Alpha Software" 719 136
-box b9 "Ephemeral Env" 709.75 198.25
+box b5 "Alpha Software" 657 138
+box b9 "Ephemeral Env" 655.75 205.25
 
 edge b3:b b2:t
 edge b4:r b2:l
