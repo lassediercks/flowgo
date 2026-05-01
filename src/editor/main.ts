@@ -103,6 +103,7 @@ import {
   deleteSelection,
   wireFactories,
 } from "./factories.ts";
+import { attachKeyboardListener, wireKeys } from "./keys.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -742,174 +743,24 @@ document.addEventListener("mousedown", (e) => {
   document.body.classList.add("panning");
 });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && isHelpOpen()) {
-    setHelpOpen(false);
-    return;
-  }
-  if (isEditing()) return;
-  // undo / redo (Cmd on macOS, Ctrl elsewhere; Cmd+Shift+Z or Ctrl+Y for redo)
-  const mod = e.metaKey || e.ctrlKey;
-  if (mod && !e.altKey && (e.key === "z" || e.key === "Z")) {
-    e.preventDefault();
-    if (e.shiftKey) redo(); else undo();
-    return;
-  }
-  if (mod && !e.altKey && (e.key === "y" || e.key === "Y")) {
-    e.preventDefault();
-    redo();
-    return;
-  }
-  if (mod && !e.altKey && !e.shiftKey && (e.key === "a" || e.key === "A")) {
-    e.preventDefault();
-    selected.clear();
-    for (const b of state.boxes) selected.add(b.id);
-    for (const t of (state.texts || [])) selected.add(t.id);
-    for (const l of (state.lines || [])) selected.add(l.id);
-    if (selectedEdge) { selectedEdge = null; renderEdges(); }
-    applyClasses();
-    setStatus("selected " + selected.size + " items");
-    return;
-  }
-  if (mod && !e.altKey && !e.shiftKey && (e.key === "c" || e.key === "C")) {
-    if (window.getSelection && String(window.getSelection())) return; // let browser copy text
-    e.preventDefault();
-    if (copySelection()) setStatus("copied " + selected.size + " items");
-    else setStatus("nothing to copy");
-    return;
-  }
-  if (mod && !e.altKey && !e.shiftKey && (e.key === "x" || e.key === "X")) {
-    e.preventDefault();
-    cutSelection();
-    return;
-  }
-  if (mod && !e.altKey && !e.shiftKey && (e.key === "v" || e.key === "V")) {
-    e.preventDefault();
-    pasteSelection();
-    return;
-  }
-  if (!mod && !e.altKey && (e.key === "t" || e.key === "T")) {
-    e.preventDefault();
-    createTextAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
-    return;
-  }
-  if (!mod && !e.altKey && (e.key === "l" || e.key === "L")) {
-    e.preventDefault();
-    createLineAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
-    return;
-  }
-  if (!mod && !e.altKey && (e.key === "b" || e.key === "B")) {
-    e.preventDefault();
-    setBrushMode(true);
-    return;
-  }
-  if (!mod && !e.altKey && (e.key === "v" || e.key === "V")) {
-    e.preventDefault();
-    setBrushMode(false);
-    return;
-  }
-  if (!mod && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
-    if (selected.size === 0) return;
-    const palette = parseInt(e.key, 10);
-    let changed = false;
-    for (const id of selected) {
-      const target = state.boxes.find(x => x.id === id) || findTextById(id);
-      if (!target) continue;
-      if (palette === 1) {
-        if (target.palette) { delete target.palette; changed = true; }
-      } else if (target.palette !== palette) {
-        target.palette = palette;
-        changed = true;
-      }
-    }
-    if (changed) {
-      e.preventDefault();
-      scheduleSave();
-      renderAll();
-    }
-    return;
-  }
-  if (!mod && !e.altKey && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
-    if (selected.size === 0) return;
-    const font = parseInt(e.code.slice(5), 10);
-    let changed = false;
-    for (const id of selected) {
-      const target = state.boxes.find(x => x.id === id) || findTextById(id);
-      if (!target) continue;
-      if (font === 1) {
-        if (target.font) { delete target.font; changed = true; }
-      } else if (target.font !== font) {
-        target.font = font;
-        changed = true;
-      }
-    }
-    if (changed) {
-      e.preventDefault();
-      scheduleSave();
-      renderAll();
-    }
-    return;
-  }
-  if (!mod && !e.altKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
-    if (selected.size === 0) return;
-    const dir = e.key === "-" ? -1 : 1;
-    // Capture each box's visual center *before* the shape change so we can
-    // re-anchor it after the new shape resizes the element.
-    const changes = [];
-    for (const id of selected) {
-      const bx = state.boxes.find(x => x.id === id);
-      if (!bx) continue;
-      const cur = boxSides(bx);
-      const next = Math.max(3, Math.min(6, cur + dir));
-      if (next === cur) continue;
-      const elOld = canvas.querySelector(`.box[data-id="${id}"]`);
-      const cx = bx.x + (elOld ? elOld.offsetWidth  : 0) / 2;
-      const cy = bx.y + (elOld ? elOld.offsetHeight : 0) / 2;
-      changes.push({ id, cx, cy });
-      if (next === 4) delete bx.sides; else bx.sides = next;
-    }
-    if (changes.length) {
-      e.preventDefault();
-      renderAll();
-      for (const { id, cx, cy } of changes) {
-        const bx = state.boxes.find(x => x.id === id);
-        const elNew = canvas.querySelector(`.box[data-id="${id}"]`);
-        if (!bx || !elNew) continue;
-        bx.x = cx - elNew.offsetWidth  / 2;
-        bx.y = cy - elNew.offsetHeight / 2;
-        elNew.style.left = bx.x + "px";
-        elNew.style.top  = bx.y + "px";
-      }
-      renderEdges();
-      scheduleSave();
-    }
-    return;
-  }
-  if (e.key === "Escape") {
-    if (isBrushMode()) { setBrushMode(false); return; }
-    if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
-    selected.clear();
-    selectedEdge = null;
-    applyClasses();
-    renderEdges();
-  }
-  if (e.key === "Delete" || e.key === "Backspace") {
-    if (selectedEdge) {
-      e.preventDefault();
-      const idx = state.edges.indexOf(selectedEdge);
-      if (idx >= 0) state.edges.splice(idx, 1);
-      selectedEdge = null;
-      scheduleSave();
-      renderEdges();
-      setStatus("edge removed");
-      return;
-    }
-    if (selected.size > 0) {
-      e.preventDefault();
-      deleteSelection();
-    }
-  }
+// Document-level keyboard handling lives in ./keys.ts.
+wireKeys({
+  canvas,
+  ghostLine,
+  currentMap: () => state,
+  findTextById,
+  selected,
+  selectedEdge: () => selectedEdge,
+  setSelectedEdge: (e) => { selectedEdge = e; },
+  link: () => link,
+  clearLink: () => { link = null; },
+  setDropTargetId: (id) => { dropTargetId = id; },
+  clearProximity: () => clearProximity(),
+  lastCursor,
+  scheduleSave: () => scheduleSave(),
+  setStatus: (s) => setStatus(s),
 });
+attachKeyboardListener();
 
 document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
