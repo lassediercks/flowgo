@@ -846,26 +846,92 @@ function strokePointsAttr(points) {
   return points.map(p => p[0] + "," + p[1]).join(" ");
 }
 
+// Ramer-Douglas-Peucker: drop points that lie within `eps` of the line
+// between their neighbours. Cheap, non-destructive smoothing that just
+// removes redundant samples — the rendered curve stays close to the
+// original path but the file gets a lot shorter.
+function simplifyStroke(points, eps) {
+  if (points.length < 3) return points.slice();
+  const eps2 = eps * eps;
+  const keep = new Array(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [lo, hi] = stack.pop();
+    if (hi - lo < 2) continue;
+    const [ax, ay] = points[lo];
+    const [bx, by] = points[hi];
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    let maxD2 = 0, idx = -1;
+    for (let i = lo + 1; i < hi; i++) {
+      const [px, py] = points[i];
+      let d2;
+      if (len2 === 0) {
+        const ex = px - ax, ey = py - ay;
+        d2 = ex * ex + ey * ey;
+      } else {
+        const t = ((px - ax) * dx + (py - ay) * dy) / len2;
+        const cx = ax + t * dx, cy = ay + t * dy;
+        const ex = px - cx, ey = py - cy;
+        d2 = ex * ex + ey * ey;
+      }
+      if (d2 > maxD2) { maxD2 = d2; idx = i; }
+    }
+    if (idx >= 0 && maxD2 > eps2) {
+      keep[idx] = true;
+      stack.push([lo, idx]);
+      stack.push([idx, hi]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+// Build an SVG path that draws a smooth curve through `points`: each
+// raw point becomes a quadratic-Bezier control point and the curve
+// ends at the midpoint between neighbours, so corners get rounded
+// off without straying far from the underlying samples.
+function strokePathD(points) {
+  if (points.length < 2) return "";
+  const f = n => Math.round(n * 100) / 100;
+  if (points.length === 2) {
+    return `M${f(points[0][0])},${f(points[0][1])} L${f(points[1][0])},${f(points[1][1])}`;
+  }
+  let d = `M${f(points[0][0])},${f(points[0][1])}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[i + 1];
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    d += ` Q${f(x1)},${f(y1)} ${f(mx)},${f(my)}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L${f(last[0])},${f(last[1])}`;
+  return d;
+}
+
 function renderStrokes() {
   strokeLayer.innerHTML = "";
   const ns = "http://www.w3.org/2000/svg";
   for (const s of (state.strokes || [])) {
     if (!s.points || s.points.length < 2) continue;
+    const d = strokePathD(s.points);
     const g = document.createElementNS(ns, "g");
     g.setAttribute("class", "stroke-group" + (selected.has(s.id) ? " selected" : ""));
     g.dataset.id = s.id;
 
-    const hit = document.createElementNS(ns, "polyline");
+    const hit = document.createElementNS(ns, "path");
     hit.setAttribute("class", "stroke-hit");
-    hit.setAttribute("points", strokePointsAttr(s.points));
+    hit.setAttribute("d", d);
     hit.setAttribute("fill", "none");
     hit.setAttribute("stroke", "transparent");
     hit.setAttribute("stroke-width", "12");
     g.appendChild(hit);
 
-    const line = document.createElementNS(ns, "polyline");
+    const line = document.createElementNS(ns, "path");
     line.setAttribute("class", "stroke-line");
-    line.setAttribute("points", strokePointsAttr(s.points));
+    line.setAttribute("d", d);
+    line.setAttribute("fill", "none");
     g.appendChild(line);
 
     g.addEventListener("mousedown", (ev) => {
@@ -2130,12 +2196,14 @@ function extendStroke(e) {
 
 function finishStroke() {
   if (!activeStroke) return;
-  if (activeStroke.points.length >= 2) {
+  // ε ≈ 1.5px — enough to drop hand-tremor samples without rounding off
+  // intentional curves. Tune up if file size still feels heavy.
+  const simplified = simplifyStroke(activeStroke.points, 1.5);
+  if (simplified.length >= 2) {
     state.strokes ||= [];
-    state.strokes.push({ id: activeStroke.id, points: activeStroke.points });
+    state.strokes.push({ id: activeStroke.id, points: simplified });
     scheduleSave();
   } else {
-    // Drop the orphan SVG node from the live preview.
     const g = activeStroke.polyEl.parentNode;
     if (g && g.parentNode) g.parentNode.removeChild(g);
   }
