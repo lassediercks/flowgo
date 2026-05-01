@@ -11,17 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: npm install
-        run: npm install --no-audit --no-fund
+          cache: 'pnpm'
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: typecheck
-        run: npm run typecheck
+        run: pnpm typecheck
       - name: vitest
-        run: npm test
+        run: pnpm test
       - name: vite build (produces dist/index.html committed alongside source)
-        run: npm run build
+        run: pnpm build
       - name: dist/index.html is up to date with source
         run: git diff --exit-code -- dist/index.html
 
@@ -30,16 +34,20 @@ jobs:
     needs: frontend
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'pnpm'
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-      - name: npm install
-        run: npm install --no-audit --no-fund
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: vite build (Go embeds dist/index.html)
-        run: npm run build
+        run: pnpm build
       - name: go vet
         run: go vet ./...
       - name: go build
