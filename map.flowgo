@@ -1,32 +1,22 @@
 map /
-box b1 Versioning 1483.7759604114208 754.4856902282373
-box b2 FlowGo 840 763
-box b3 Mapping 878.5 422.5
-box b4 Layering 584.5 758.5
-box b5 Humans 1251 173.5
-box b6 Abstraction 1195 300.5
-box b7 "Simple Tools" 1456 322.5
+box b1 Versioning 1145.7759604114208 697.4856902282373
+box b2 FlowGo 1011 206
+box b3 Mapping 910.5 484.5
+box b4 Layering 570.5 586.5
+box b6 Abstraction 873 672.5
+box b7 "Simple Tools" 1291 342.5
+box b8 "Open Format" 1379.5 588.75
+box b5 "Alpha Software" 719 136
+box b9 "Ephemeral Env" 709.75 198.25
 
-edge b5:b b6:t
 edge b3:b b2:t
-edge b1:t b6:br
 edge b4:r b2:l
-edge b5:br b7:t
-edge b7:bl b2:tr
-edge b2:r b1:l
-edge b3:tr b6:l
-
-text t1 Genesis 608 933
-text t2 Emerging 895 930
-text t3 Product 1210 933
-text t4 Commodity 1495 930
-
-line l1 484.5 892 1684.5 892
-line l2 484.5 332 484.5 892
-line l3 785 342 779 892
-line l4 1099 332 1099 892
-line l5 1399 332 1399 892
-line l6 1679 332 1679 892
+edge b2:tr b7:l
+edge b6:t b3:b
+edge b1:t b2:br
+edge b8:l b2:r
+edge b5:r b2:l
+edge b9:r b2:l
 
 map /b1
 box b1 Versioning 1660 300
