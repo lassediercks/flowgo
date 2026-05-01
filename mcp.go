@@ -203,6 +203,9 @@ func nextID(m *NamedMap, prefix string) string {
 	for _, l := range m.Lines {
 		used[l.ID] = true
 	}
+	for _, s := range m.Strokes {
+		used[s.ID] = true
+	}
 	for n := 1; ; n++ {
 		id := fmt.Sprintf("%s%d", prefix, n)
 		if !used[id] {

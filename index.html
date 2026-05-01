@@ -438,6 +438,7 @@ function uid(prefix) {
     ...state.boxes.map(b => b.id),
     ...(state.texts || []).map(t => t.id),
     ...(state.lines || []).map(l => l.id),
+    ...(state.strokes || []).map(s => s.id),
   ]);
   while (used.has(prefix + n)) n++;
   return prefix + n;
