@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.14](https://github.com/lassediercks/flowgo/compare/0.0.13...0.0.14) (2026-05-01)
+
+
+### Bug Fixes
+
+* extract pkg/graph for external import ([3defd1f](https://github.com/lassediercks/flowgo/commit/3defd1fb79fb39c1869f3ec4be6c2fe6db4f89c0))
+
 ## [0.0.13](https://github.com/lassediercks/flowgo/compare/0.0.12...0.0.13) (2026-05-01)
 
 
