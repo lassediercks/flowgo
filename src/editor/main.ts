@@ -48,6 +48,16 @@ import {
   pasteSelection,
   wireClipboard,
 } from "./clipboard.ts";
+import {
+  attachNavigationListeners,
+  enterSubmap,
+  ensureMap,
+  goUp,
+  navigateTo,
+  readPathFromURL,
+  renderPath,
+  wireNavigation,
+} from "./navigation.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -143,101 +153,23 @@ async function load() {
   setStatus(SNAPSHOT_MODE ? "snapshot " + SNAPSHOT_ID + " — local edits only" : "loaded");
 }
 
-function ensureMap(path) {
-  let m = graph.maps.find(m => m.path === path);
-  if (!m) {
-    m = { path, boxes: [], edges: [] };
-    graph.maps.push(m);
-  }
-  m.boxes ||= [];
-  m.edges ||= [];
-  m.texts ||= [];
-  m.lines ||= [];
-  m.strokes ||= [];
-  return m;
-}
-
-function setCurrentPath(p, opts) {
-  const keepViewport = opts && opts.keepViewport;
-  currentPath = p;
-  state = ensureMap(p);
-  selected.clear();
-  selectedEdge = null;
-  renderAll();
-  renderPath();
-  if (!keepViewport) recenter();
-  // Persist the current submap path in the URL hash so the location is
-  // bookmarkable and the browser back/forward stack walks the navigation.
-  const newHash = "#" + p;
-  if (location.hash !== newHash) {
-    history.pushState(null, "", newHash);
-  }
-}
-
-function readPathFromURL() {
-  let h = location.hash || "";
-  if (h.startsWith("#")) h = h.slice(1);
-  if (!h) return "/";
-  if (!h.startsWith("/")) h = "/" + h;
-  return h;
-}
-
-window.addEventListener("hashchange", () => {
-  const p = readPathFromURL();
-  if (p !== currentPath) setCurrentPath(p);
+// Path navigation lives in ./navigation.ts. The wire object lets the
+// module read/write the live state held in this file.
+wireNavigation({
+  getGraph: () => graph,
+  getCurrentPath: () => currentPath,
+  setCurrentPath: (p) => { currentPath = p; },
+  setCurrentMap: (m) => { state = m; },
+  clearSelected: () => selected.clear(),
+  clearSelectedEdge: () => { selectedEdge = null; },
+  renderAll: () => renderAll(),
 });
+attachNavigationListeners();
 
-function renderPath() {
-  const el = document.getElementById("path");
-  el.innerHTML = "";
-  const segs = currentPath === "/" ? [] : currentPath.split("/").filter(Boolean);
-  const root = document.createElement("span");
-  root.className = "seg";
-  root.textContent = "/";
-  root.addEventListener("click", () => setCurrentPath("/"));
-  el.appendChild(root);
-  let acc = "";
-  let parentPath = "/";
-  segs.forEach((s, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "sep";
-      sep.textContent = "/";
-      el.appendChild(sep);
-    }
-    acc += "/" + s;
-    const path = acc;
-    // Resolve the segment id to its label by looking it up in the parent map.
-    const parentMap = (graph.maps || []).find(m => m.path === parentPath);
-    const parentBox = parentMap && (parentMap.boxes || []).find(b => b.id === s);
-    const label = (parentBox && parentBox.label && parentBox.label.trim()) || s;
-    parentPath = path;
-    const seg = document.createElement("span");
-    seg.className = "seg";
-    seg.textContent = label;
-    seg.title = s;
-    if (i < segs.length - 1) {
-      seg.addEventListener("click", () => setCurrentPath(path));
-    } else {
-      seg.style.fontWeight = "bold";
-      seg.style.cursor = "default";
-    }
-    el.appendChild(seg);
-  });
-  document.getElementById("upBtn").style.display = (currentPath === "/") ? "none" : "";
-}
-
-function enterSubmap(boxId) {
-  const newPath = currentPath === "/" ? "/" + boxId : currentPath + "/" + boxId;
-  setCurrentPath(newPath);
-}
-
-function goUp() {
-  if (currentPath === "/") return;
-  const parts = currentPath.split("/").filter(Boolean);
-  parts.pop();
-  setCurrentPath(parts.length ? "/" + parts.join("/") : "/");
-}
+// Existing call sites use setCurrentPath(); keep that name available
+// as a thin alias for navigateTo() while the rest of the file
+// continues to migrate.
+const setCurrentPath = navigateTo;
 
 function scheduleSave() {
   setStatus("saving…");
