@@ -96,6 +96,13 @@ import {
   wireProximity,
   wireRender,
 } from "./render.ts";
+import {
+  createBoxAt,
+  createLineAt,
+  createTextAt,
+  deleteSelection,
+  wireFactories,
+} from "./factories.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -199,6 +206,22 @@ attachNavigationListeners();
 
 const setCurrentPath = navigateTo;
 const serializeGraph = serializeGraphPure;
+
+wireFactories({
+  canvas,
+  currentMap: () => state,
+  setCurrentMap: (m) => { state = m; },
+  graph: () => graph,
+  setGraph: (g) => { graph = g; },
+  currentPath: () => currentPath,
+  ensureMap,
+  selected,
+  selectedEdge: () => selectedEdge,
+  clearSelectedEdge: () => { selectedEdge = null; },
+  mintId: uid,
+  scheduleSave: () => scheduleSave(),
+  setStatus: (s) => setStatus(s),
+});
 
 wireEdit({
   canvas,
@@ -672,59 +695,8 @@ function findBoxAt(x, y) {
 
 // startEdit lives in ./edit.ts (alongside startTextEdit).
 
-function createBoxAt(x, y, centerOn) {
-  const id = uid();
-  const b = { id, label: "new", x, y };
-  state.boxes.push(b);
-  renderAll();
-  const el = canvas.querySelector(`.box[data-id="${id}"]`);
-  if (el && centerOn) {
-    b.x = centerOn.x - el.offsetWidth / 2;
-    b.y = centerOn.y - el.offsetHeight / 2;
-    el.style.left = b.x + "px";
-    el.style.top = b.y + "px";
-  }
-  scheduleSave();
-  if (el) {
-    selected.clear();
-    selected.add(id);
-    if (selectedEdge) { selectedEdge = null; renderEdges(); }
-    applyClasses();
-    startEdit(el, b);
-  }
-}
-
-function createTextAt(cx, cy) {
-  const id = uid("t");
-  const t = { id, label: "text", x: cx, y: cy };
-  state.texts.push(t);
-  renderAll();
-  const el = canvas.querySelector(`.text-item[data-id="${id}"]`);
-  if (el) {
-    t.x = cx - el.offsetWidth / 2;
-    t.y = cy - el.offsetHeight / 2;
-    el.style.left = t.x + "px";
-    el.style.top = t.y + "px";
-    selected.clear();
-    selected.add(id);
-    if (selectedEdge) { selectedEdge = null; renderEdges(); }
-    applyClasses();
-    startTextEdit(el, t);
-  }
-  scheduleSave();
-}
-
-function createLineAt(cx, cy) {
-  const id = uid("l");
-  const half = 80;
-  const l = { id, x1: cx - half, y1: cy, x2: cx + half, y2: cy };
-  state.lines.push(l);
-  selected.clear();
-  selected.add(id);
-  if (selectedEdge) { selectedEdge = null; renderEdges(); }
-  renderAll();
-  scheduleSave();
-}
+// createBoxAt / createTextAt / createLineAt / deleteSelection live
+// in ./factories.ts.
 
 
 document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
@@ -746,26 +718,7 @@ wireClipboard({
   clearSelectedEdge: () => { selectedEdge = null; },
 });
 
-function deleteSelection() {
-  if (selected.size === 0) { setStatus("nothing selected"); return; }
-  const ids = Array.from(selected);
-  const boxIds = ids.filter(id => state.boxes.some(b => b.id === id));
-  state.boxes = state.boxes.filter(b => !selected.has(b.id));
-  state.edges = state.edges.filter(e => !selected.has(e.from) && !selected.has(e.to));
-  state.texts = state.texts.filter(t => !selected.has(t.id));
-  state.lines = state.lines.filter(l => !selected.has(l.id));
-  state.strokes = (state.strokes || []).filter(s => !selected.has(s.id));
-  // Drop each deleted box's submap and any descendants.
-  for (const id of boxIds) {
-    const removedPath = currentPath === "/" ? "/" + id : currentPath + "/" + id;
-    graph.maps = graph.maps.filter(m =>
-      m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
-  }
-  state = ensureMap(currentPath);
-  selected.clear();
-  scheduleSave();
-  renderAll();
-}
+// deleteSelection lives in ./factories.ts.
 
 document.getElementById("upBtn").addEventListener("click", goUp);
 document.getElementById("downloadBtn").addEventListener("click", downloadFlowgo);
