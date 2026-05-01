@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.12](https://github.com/lassediercks/flowgo/compare/0.0.11...0.0.12) (2026-05-01)
+
+
+### Features
+
+* box palettes, font scaling, and MCP parity ([5948ac6](https://github.com/lassediercks/flowgo/commit/5948ac62afa91936ac8a38ea43b0c698d1e6098a))
+* brushes and clipboard ([06a94d4](https://github.com/lassediercks/flowgo/commit/06a94d45c928015774955092b2e90b18f95380e4))
+
 ## [0.0.11](https://github.com/lassediercks/flowgo/compare/0.0.10...0.0.11) (2026-05-01)
 
 
