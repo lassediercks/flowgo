@@ -11,18 +11,10 @@ import {
   addOrReplaceEdge as addOrReplaceEdgePure,
   boxSides,
   collectIds,
-  flowgoNum,
-  flowgoQuote,
-  handleAnchor as handleAnchorPure,
   hasSubmapContent,
-  nearestHandle as nearestHandlePure,
   nextUid,
-  polygonAnchor as polygonAnchorPure,
   polygonPointsForSides,
-  polygonVerticesFor,
-  rectAnchor,
   serializeGraph as serializeGraphPure,
-  simplifyStroke,
   strokePathD,
 } from "../index.ts";
 import { attachHelpListeners, isHelpOpen, setHelpOpen } from "./help.ts";
@@ -81,6 +73,12 @@ import {
   cloneSelection as cloneSelectionPure,
   wireClone,
 } from "./clone.ts";
+import {
+  endpointAnchor,
+  handleAnchor,
+  nearestHandle,
+  polygonAnchor,
+} from "./anchors.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -405,37 +403,7 @@ function renderEdges() {
 
 // Handle dots still render with a CSS offset (-20px) so they're easy to grab,
 // but edge endpoints anchor to the box's actual border so the line visually
-// All edge-anchor math now lives in src/graph/handle.ts and
-// src/graph/polygon.ts. The wrappers below pull live element
-// dimensions, package them into a Box2D, and delegate to the pure
-// helpers — preserving the existing call signatures so render and
-// interaction code keeps working unchanged.
-
-const boxFor = (el, b) => ({
-  x: b.x,
-  y: b.y,
-  width: el.offsetWidth,
-  height: el.offsetHeight,
-});
-
-function handleAnchor(el, b, code) {
-  return handleAnchorPure(boxFor(el, b), code);
-}
-
-function nearestHandle(b, el, fx, fy) {
-  return nearestHandlePure(boxFor(el, b), [fx, fy]);
-}
-
-function polygonAnchor(b, el, towardX, towardY) {
-  const box = boxFor(el, b);
-  const hit = polygonAnchorPure(box, boxSides(b), [towardX, towardY]);
-  return hit || [box.x + box.width / 2, box.y + box.height / 2];
-}
-
-function endpointAnchor(b, el, code, towardX, towardY) {
-  if (boxSides(b) !== 4) return polygonAnchor(b, el, towardX, towardY);
-  return rectAnchor(boxFor(el, b), code, [towardX, towardY]);
-}
+// Edge-anchor adapters live in ./anchors.ts.
 
 // Mutate the live state.edges in-place so existing call sites keep
 // working; the actual replacement logic is the pure helper.
