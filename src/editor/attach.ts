@@ -1,0 +1,391 @@
+// Per-item event-wiring. attachBoxHandlers / attachTextHandlers /
+// attachLineHandlers run once per rendered element to install the
+// mousedown handlers that start drags and link drags, plus the
+// dblclick handlers that enter inline label edit mode.
+//
+// collectMovers gathers a Mover for every currently-selected item
+// (boxes, texts, lines) so a body-drag can move them in lockstep.
+
+import { primaryMod } from "./platform.ts";
+import {
+  applyClasses,
+  renderEdges,
+} from "./render.ts";
+import {
+  makeBoxMover,
+  makeLineEndpointMover,
+  makeLineMover,
+  makeTextMover,
+  type Mover,
+} from "./movers.ts";
+import { handleAnchor, nearestHandle } from "./anchors.ts";
+import { startEdit, startTextEdit } from "./edit.ts";
+import { toDataX, toDataY } from "./viewport.ts";
+import { enterSubmap } from "./navigation.ts";
+
+interface BoxLike {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+}
+interface TextLike { id: string; label: string; x: number; y: number }
+interface LineLike { id: string; x1: number; y1: number; x2: number; y2: number }
+interface EdgeLike {
+  from: string;
+  to: string;
+  fromHandle?: string;
+  toHandle?: string;
+}
+
+interface CurrentMap {
+  boxes: BoxLike[];
+  edges: EdgeLike[];
+  texts: TextLike[];
+  lines: LineLike[];
+}
+
+interface DragState {
+  movers: Mover[];
+  primaryId: string;
+  downX: number;
+  downY: number;
+  active: boolean;
+}
+
+interface LinkState {
+  fromId: string;
+  fromHandle: string;
+  startX: number;
+  startY: number;
+  handleEl: HTMLElement;
+  rerouting?: boolean;
+}
+
+interface AttachBindings {
+  readonly canvas: HTMLElement;
+  readonly lineLayer: SVGGElement;
+  readonly ghostLine: SVGLineElement;
+  readonly currentMap: () => CurrentMap;
+  readonly findTextById: (id: string) => TextLike | undefined;
+  readonly findLineById: (id: string) => LineLike | undefined;
+  readonly selected: Set<string>;
+  readonly selectedEdge: () => EdgeLike | null;
+  readonly setSelectedEdge: (e: EdgeLike | null) => void;
+  readonly setDrag: (d: DragState | null) => void;
+  readonly setLink: (l: LinkState | null) => void;
+  readonly cloneSelection: () => Map<string, string>;
+  readonly setStatus: (s: string) => void;
+}
+
+let bindings: AttachBindings | null = null;
+const must = (): AttachBindings => {
+  if (!bindings) throw new Error("attach: wireAttach() not called");
+  return bindings;
+};
+
+export const wireAttach = (b: AttachBindings): void => {
+  bindings = b;
+};
+
+// Gather a Mover for every currently-selected item — body drag uses
+// this to move the whole selection in lockstep.
+export const collectMovers = (): Mover[] => {
+  const w = must();
+  const movers: Mover[] = [];
+  const map = w.currentMap();
+  for (const id of w.selected) {
+    const b = map.boxes.find((x) => x.id === id);
+    if (b) {
+      const me = w.canvas.querySelector<HTMLElement>(`.box[data-id="${id}"]`);
+      if (me) movers.push(makeBoxMover(b, me));
+      continue;
+    }
+    const t = w.findTextById(id);
+    if (t) {
+      const me = w.canvas.querySelector<HTMLElement>(`.text-item[data-id="${id}"]`);
+      if (me) movers.push(makeTextMover(t, me));
+      continue;
+    }
+    const l = w.findLineById(id);
+    if (l) {
+      const g = w.lineLayer.querySelector<SVGGElement>(
+        `.line-group[data-id="${id}"]`,
+      );
+      if (g) {
+        const lineEl = g.querySelector<SVGLineElement>(".line-line")!;
+        const hitEl = g.querySelector<SVGLineElement>(".line-hit")!;
+        const h1 = g.querySelector<SVGCircleElement>(
+          '.line-handle[data-endpoint="1"]',
+        );
+        const h2 = g.querySelector<SVGCircleElement>(
+          '.line-handle[data-endpoint="2"]',
+        );
+        movers.push(makeLineMover(l, g, lineEl, hitEl, h1, h2));
+      }
+    }
+  }
+  return movers;
+};
+
+export const attachTextHandlers = (
+  el: HTMLElement,
+  t: TextLike,
+): void => {
+  el.addEventListener("mousedown", (e) => {
+    const w = must();
+    if (el.isContentEditable) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!w.selected.has(t.id)) {
+      if (!e.shiftKey) w.selected.clear();
+      w.selected.add(t.id);
+      if (w.selectedEdge()) {
+        w.setSelectedEdge(null);
+        renderEdges();
+      }
+      applyClasses();
+    }
+    let primaryId = t.id;
+    if (e.altKey) {
+      const idMap = w.cloneSelection();
+      if (idMap.has(t.id)) primaryId = idMap.get(t.id)!;
+    }
+    w.setDrag({
+      movers: collectMovers(),
+      primaryId,
+      downX: e.clientX,
+      downY: e.clientY,
+      active: false,
+    });
+  });
+  el.addEventListener("dblclick", (e) => {
+    const w = must();
+    if (el.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    w.selected.clear();
+    w.selected.add(t.id);
+    applyClasses();
+    startTextEdit(el, t);
+  });
+};
+
+export const attachLineHandlers = (
+  g: SVGGElement,
+  lineEl: SVGLineElement,
+  hitEl: SVGLineElement,
+  h1: SVGCircleElement,
+  h2: SVGCircleElement,
+  l: LineLike,
+): void => {
+  hitEl.addEventListener("mousedown", (e) => {
+    const w = must();
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!w.selected.has(l.id)) {
+      if (!e.shiftKey) w.selected.clear();
+      w.selected.add(l.id);
+      if (w.selectedEdge()) {
+        w.setSelectedEdge(null);
+        renderEdges();
+      }
+      applyClasses();
+    }
+    let primaryId = l.id;
+    if (e.altKey) {
+      const idMap = w.cloneSelection();
+      if (idMap.has(l.id)) primaryId = idMap.get(l.id)!;
+    }
+    w.setDrag({
+      movers: collectMovers(),
+      primaryId,
+      downX: e.clientX,
+      downY: e.clientY,
+      active: false,
+    });
+  });
+  for (const [hEl, endpoint] of [
+    [h1, 1 as const],
+    [h2, 2 as const],
+  ] as const) {
+    hEl.addEventListener("mousedown", (e) => {
+      const w = must();
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Endpoint drag — single endpoint, ignores multi-selection.
+      w.selected.clear();
+      w.selected.add(l.id);
+      if (w.selectedEdge()) {
+        w.setSelectedEdge(null);
+        renderEdges();
+      }
+      applyClasses();
+      w.setDrag({
+        movers: [
+          makeLineEndpointMover(l, endpoint, {
+            g,
+            line: lineEl,
+            hit: hitEl,
+            h1,
+            h2,
+          }),
+        ],
+        primaryId: l.id,
+        downX: e.clientX,
+        downY: e.clientY,
+        active: false,
+      });
+    });
+  }
+};
+
+export const attachBoxHandlers = (
+  el: HTMLElement,
+  b: BoxLike,
+): void => {
+  el.addEventListener("mousedown", (e) => {
+    const w = must();
+    if (el.isContentEditable) return;
+    if (e.button === 1 || (e.button === 0 && primaryMod(e))) {
+      e.preventDefault();
+      e.stopPropagation();
+      enterSubmap(b.id);
+      return;
+    }
+    if (e.button !== 0) return;
+
+    const target = e.target as HTMLElement;
+    // Handle click? Start a link-drag (new edge, or re-route an existing edge).
+    if (target.classList.contains("handle")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const code = target.dataset["handle"]!;
+      const map = w.currentMap();
+
+      // Is there an existing edge anchored to this exact box+handle? If so,
+      // pick it up.
+      let pickedEdge: EdgeLike | null = null;
+      let anchoredId: string | null = null;
+      let anchoredHandle = "";
+      for (let i = map.edges.length - 1; i >= 0; i--) {
+        const ed = map.edges[i]!;
+        if (ed.from === b.id && ed.fromHandle === code) {
+          pickedEdge = ed;
+          anchoredId = ed.to;
+          anchoredHandle = ed.toHandle ?? "";
+          break;
+        }
+        if (ed.to === b.id && ed.toHandle === code) {
+          pickedEdge = ed;
+          anchoredId = ed.from;
+          anchoredHandle = ed.fromHandle ?? "";
+          break;
+        }
+      }
+
+      if (pickedEdge && anchoredId) {
+        const idx = map.edges.indexOf(pickedEdge);
+        if (idx >= 0) map.edges.splice(idx, 1);
+        const anchoredBox = map.boxes.find((x) => x.id === anchoredId);
+        const anchoredEl = w.canvas.querySelector<HTMLElement>(
+          `.box[data-id="${anchoredId}"]`,
+        );
+        if (!anchoredBox || !anchoredEl) {
+          // Anchored end vanished; bail out (and put the edge back).
+          map.edges.push(pickedEdge);
+          renderEdges();
+          return;
+        }
+        const fallbackTowardX = b.x + el.offsetWidth / 2;
+        const fallbackTowardY = b.y + el.offsetHeight / 2;
+        const code2 =
+          anchoredHandle ||
+          nearestHandle(anchoredBox, anchoredEl, fallbackTowardX, fallbackTowardY);
+        const [hx, hy] = handleAnchor(anchoredEl, anchoredBox, code2 as never);
+        w.setLink({
+          fromId: anchoredId,
+          fromHandle: code2,
+          startX: hx,
+          startY: hy,
+          handleEl: target,
+          rerouting: true,
+        });
+        target.classList.add("active");
+        w.ghostLine.setAttribute("x1", String(hx));
+        w.ghostLine.setAttribute("y1", String(hy));
+        w.ghostLine.setAttribute("x2", String(toDataX(e.clientX)));
+        w.ghostLine.setAttribute("y2", String(toDataY(e.clientY)));
+        w.ghostLine.style.display = "";
+        renderEdges();
+        w.setStatus("re-routing edge — drop on a box, or in empty space");
+        return;
+      }
+
+      // No existing edge: start a new connection from this handle.
+      const [hx, hy] = handleAnchor(el, b, code as never);
+      w.setLink({
+        fromId: b.id,
+        fromHandle: code,
+        startX: hx,
+        startY: hy,
+        handleEl: target,
+      });
+      target.classList.add("active");
+      w.ghostLine.setAttribute("x1", String(hx));
+      w.ghostLine.setAttribute("y1", String(hy));
+      w.ghostLine.setAttribute("x2", String(toDataX(e.clientX)));
+      w.ghostLine.setAttribute("y2", String(toDataY(e.clientY)));
+      w.ghostLine.style.display = "";
+      w.setStatus("drop on a box to connect, or release to cancel");
+      return;
+    }
+
+    // Body drag (single or multi-select).
+    e.preventDefault();
+    e.stopPropagation();
+    // If this box isn't already in the selection, replace the selection with just it.
+    if (!w.selected.has(b.id)) {
+      if (!e.shiftKey) w.selected.clear();
+      w.selected.add(b.id);
+      if (w.selectedEdge()) {
+        w.setSelectedEdge(null);
+        renderEdges();
+      }
+      applyClasses();
+    }
+    let primaryId = b.id;
+
+    // Alt/Option+drag: duplicate the selection and drag the clones instead.
+    if (e.altKey) {
+      const idMap = w.cloneSelection();
+      if (idMap.has(b.id)) primaryId = idMap.get(b.id)!;
+    }
+
+    w.setDrag({
+      movers: collectMovers(),
+      primaryId,
+      downX: e.clientX,
+      downY: e.clientY,
+      active: false,
+    });
+  });
+
+  el.addEventListener("dblclick", (e) => {
+    const w = must();
+    if (el.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    w.selected.clear();
+    w.selected.add(b.id);
+    if (w.selectedEdge()) {
+      w.setSelectedEdge(null);
+      renderEdges();
+    }
+    applyClasses();
+    startEdit(el, b);
+  });
+};
