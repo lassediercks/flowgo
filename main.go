@@ -54,12 +54,18 @@ type Line struct {
 	Y2 float64 `json:"y2"`
 }
 
+type Stroke struct {
+	ID     string      `json:"id"`
+	Points [][]float64 `json:"points"`
+}
+
 type NamedMap struct {
-	Path  string `json:"path"`
-	Boxes []Box  `json:"boxes"`
-	Edges []Edge `json:"edges"`
-	Texts []Text `json:"texts,omitempty"`
-	Lines []Line `json:"lines,omitempty"`
+	Path    string   `json:"path"`
+	Boxes   []Box    `json:"boxes"`
+	Edges   []Edge   `json:"edges"`
+	Texts   []Text   `json:"texts,omitempty"`
+	Lines   []Line   `json:"lines,omitempty"`
+	Strokes []Stroke `json:"strokes,omitempty"`
 }
 
 type Graph struct {
@@ -265,6 +271,27 @@ func parse(s string) (Graph, error) {
 				coords[i] = v
 			}
 			g.Maps[cur].Lines = append(g.Maps[cur].Lines, Line{ID: toks[1], X1: coords[0], Y1: coords[1], X2: coords[2], Y2: coords[3]})
+		case "stroke":
+			if len(toks) < 4 {
+				return g, fmt.Errorf("line %d: stroke needs id and at least two points", lineNo)
+			}
+			pts := make([][]float64, 0, len(toks)-2)
+			for _, pair := range toks[2:] {
+				parts := strings.SplitN(pair, ",", 2)
+				if len(parts) != 2 {
+					return g, fmt.Errorf("line %d: bad stroke point %q", lineNo, pair)
+				}
+				px, err := strconv.ParseFloat(parts[0], 64)
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad stroke x: %v", lineNo, err)
+				}
+				py, err := strconv.ParseFloat(parts[1], 64)
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad stroke y: %v", lineNo, err)
+				}
+				pts = append(pts, []float64{px, py})
+			}
+			g.Maps[cur].Strokes = append(g.Maps[cur].Strokes, Stroke{ID: toks[1], Points: pts})
 		default:
 			return g, fmt.Errorf("line %d: unknown directive %q", lineNo, toks[0])
 		}
@@ -306,7 +333,7 @@ func serialize(g Graph) string {
 	// Drop empty maps; they will be re-created on demand if navigated to.
 	var nonEmpty []NamedMap
 	for _, m := range g.Maps {
-		if len(m.Boxes) == 0 && len(m.Edges) == 0 && len(m.Texts) == 0 && len(m.Lines) == 0 {
+		if len(m.Boxes) == 0 && len(m.Edges) == 0 && len(m.Texts) == 0 && len(m.Lines) == 0 && len(m.Strokes) == 0 {
 			continue
 		}
 		nonEmpty = append(nonEmpty, m)
@@ -343,6 +370,22 @@ func serialize(g Graph) string {
 		}
 		for _, l := range m.Lines {
 			fmt.Fprintf(&b, "line %s %g %g %g %g\n", l.ID, l.X1, l.Y1, l.X2, l.Y2)
+		}
+		if (len(m.Boxes) > 0 || len(m.Edges) > 0 || len(m.Texts) > 0 || len(m.Lines) > 0) && len(m.Strokes) > 0 {
+			b.WriteString("\n")
+		}
+		for _, s := range m.Strokes {
+			if len(s.Points) < 2 {
+				continue
+			}
+			fmt.Fprintf(&b, "stroke %s", s.ID)
+			for _, p := range s.Points {
+				if len(p) < 2 {
+					continue
+				}
+				fmt.Fprintf(&b, " %g,%g", p[0], p[1])
+			}
+			b.WriteString("\n")
 		}
 	}
 	return b.String()

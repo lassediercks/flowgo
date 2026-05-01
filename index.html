@@ -17,6 +17,13 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     pointer-events: none;
   }
+  #feedbackBtn {
+    position: fixed; bottom: 8px; right: 8px; z-index: 11;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; color: #444;
+    text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  #feedbackBtn:hover { background: #f0f0f0; color: #222; }
   #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
   #path .seg { cursor: pointer; }
   #path .seg:hover { text-decoration: underline; }
@@ -51,6 +58,10 @@
     text-align: center;
   }
   .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
+  .box.has-submap { box-shadow: 4px 4px 0 0 #222; }
+  .box.has-submap.dragging { box-shadow: 6px 6px 0 0 #222, 0 4px 10px rgba(0,0,0,.2); }
+  .box.shaped.has-submap { box-shadow: none; }
+  .box.shaped.has-submap > .shape-svg { filter: drop-shadow(4px 4px 0 #222); }
   .box.selected { border-color: #07f; }
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
@@ -63,7 +74,7 @@
     display: flex; align-items: center; justify-content: center;
   }
   .box.shaped.sides-3 {
-    padding: 50% 18px 12px;
+    padding: 18px 18px 12px;
     align-items: flex-end;
   }
   .box.shaped.dragging { box-shadow: none; }
@@ -90,6 +101,24 @@
     cursor: text; user-select: text; outline: none;
     background: #ffffe0; border-color: #aaa;
   }
+
+  .stroke-group .stroke-hit { pointer-events: stroke; cursor: pointer; }
+  .stroke-line { fill: none; stroke: #333; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .stroke-group.selected .stroke-line { stroke: #07f; }
+
+  body.brush-mode,
+  body.brush-mode #bg-layer,
+  body.brush-mode #canvas,
+  body.brush-mode .box,
+  body.brush-mode .text-item {
+    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M3 21l3-1 9-9-2-2-9 9-1 3z' fill='%23333' stroke='%23000' stroke-width='1'/><path d='M14 9l4-4-2-2-4 4z' fill='%23a60' stroke='%23000' stroke-width='1'/></svg>") 2 22, crosshair;
+  }
+  body.brush-mode .handle { display: none; }
+  body.brush-mode #canvas .box,
+  body.brush-mode #canvas .text-item,
+  body.brush-mode .line-group,
+  body.brush-mode .stroke-group,
+  body.brush-mode .edge-group { pointer-events: none; }
 
   .line-group .line-hit { pointer-events: stroke; cursor: grab; }
   .line-group.dragging .line-hit { cursor: grabbing; }
@@ -189,6 +218,7 @@
 </div>
 <div id="bg-layer"></div>
 <svg id="bg-svg">
+  <g id="stroke-layer"></g>
   <g id="line-layer"></g>
 </svg>
 <div id="canvas"></div>
@@ -218,6 +248,7 @@
     <table>
       <tr><td><kbd>T</kbd></td><td>Spawn a text label at the cursor (auto-edits)</td></tr>
       <tr><td><kbd>L</kbd></td><td>Spawn a horizontal line at the cursor</td></tr>
+      <tr><td><kbd>B</kbd> / <kbd>V</kbd></td><td>Enter brush mode (drag to paint freehand) / leave brush mode</td></tr>
       <tr><td>Click a text / line</td><td>Select it</td></tr>
       <tr><td>Double-click a text</td><td>Edit its label</td></tr>
       <tr><td>Drag a text / line body</td><td>Move it (with any other selected items)</td></tr>
@@ -241,6 +272,7 @@
     <table>
       <tr><td>Drag on empty canvas</td><td>Rubber-band select all boxes intersecting the rectangle</td></tr>
       <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd></td><td>Select every box, text, and line on the current map</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy / cut / paste the current selection (each paste offsets +20px)</td></tr>
       <tr><td><kbd>Shift</kbd>-drag on empty canvas</td><td>Add to the existing selection instead of replacing</td></tr>
       <tr><td>Click on empty canvas</td><td>Clear the selection</td></tr>
     </table>
@@ -291,6 +323,7 @@
   <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
 </svg>
 <div id="version"></div>
+<a id="feedbackBtn" href="https://github.com/lassediercks/flowgo/issues/new" target="_blank" rel="noopener noreferrer">Give feedback</a>
 
 <script>
 let graph = { maps: [] };
@@ -307,6 +340,7 @@ function applyViewport() {
   const tx = viewport.x, ty = viewport.y;
   canvas.style.transform = `translate(${tx}px, ${ty}px)`;
   document.getElementById("line-layer").setAttribute("transform", `translate(${tx} ${ty})`);
+  document.getElementById("stroke-layer").setAttribute("transform", `translate(${tx} ${ty})`);
   document.getElementById("edge-layer").setAttribute("transform", `translate(${tx} ${ty})`);
   ghostLine.setAttribute("transform", `translate(${tx} ${ty})`);
   document.getElementById("bg-layer").style.backgroundPosition = `${tx}px ${ty}px`;
@@ -351,11 +385,15 @@ let link = null;       // link drag from a handle
 let editing = null;
 let dropTargetId = null;
 let nearTargetId = null; // box close enough to the cursor during a link drag
+let clipboard = null; // { boxes, texts, lines, edges, pasteOffset } captured by copy/cut
 
 const canvas = document.getElementById("canvas");
 const svg = document.getElementById("edges");
 const edgeLayer = document.getElementById("edge-layer");
 const lineLayer = document.getElementById("line-layer");
+const strokeLayer = document.getElementById("stroke-layer");
+let brushMode = false;
+let activeStroke = null; // { id, points, polyEl } while painting
 const ghostLine = document.getElementById("ghost-line");
 
 const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
@@ -428,6 +466,7 @@ function ensureMap(path) {
   m.edges ||= [];
   m.texts ||= [];
   m.lines ||= [];
+  m.strokes ||= [];
   return m;
 }
 
@@ -470,6 +509,7 @@ function renderPath() {
   root.addEventListener("click", () => setCurrentPath("/"));
   el.appendChild(root);
   let acc = "";
+  let parentPath = "/";
   segs.forEach((s, i) => {
     if (i > 0) {
       const sep = document.createElement("span");
@@ -479,9 +519,15 @@ function renderPath() {
     }
     acc += "/" + s;
     const path = acc;
+    // Resolve the segment id to its label by looking it up in the parent map.
+    const parentMap = (graph.maps || []).find(m => m.path === parentPath);
+    const parentBox = parentMap && (parentMap.boxes || []).find(b => b.id === s);
+    const label = (parentBox && parentBox.label && parentBox.label.trim()) || s;
+    parentPath = path;
     const seg = document.createElement("span");
     seg.className = "seg";
-    seg.textContent = s;
+    seg.textContent = label;
+    seg.title = s;
     if (i < segs.length - 1) {
       seg.addEventListener("click", () => setCurrentPath(path));
     } else {
@@ -568,6 +614,13 @@ function serializeGraph(g) {
     if (beforeLines && (m.lines || []).length) out += "\n";
     for (const l of (m.lines || [])) {
       out += "line " + l.id + " " + flowgoNum(l.x1) + " " + flowgoNum(l.y1) + " " + flowgoNum(l.x2) + " " + flowgoNum(l.y2) + "\n";
+    }
+    const beforeStrokes = beforeLines || (m.lines || []).length;
+    if (beforeStrokes && (m.strokes || []).length) out += "\n";
+    for (const s of (m.strokes || [])) {
+      if (!s.points || s.points.length < 2) continue;
+      const pairs = s.points.map(p => flowgoNum(p[0]) + "," + flowgoNum(p[1])).join(" ");
+      out += "stroke " + s.id + " " + pairs + "\n";
     }
   });
   return out;
@@ -656,6 +709,18 @@ function redo() {
   setStatus("redo");
 }
 
+function boxHasSubmapContent(boxId) {
+  const subPath = currentPath === "/" ? "/" + boxId : currentPath + "/" + boxId;
+  for (const m of (graph.maps || [])) {
+    if (m.path !== subPath && !m.path.startsWith(subPath + "/")) continue;
+    if ((m.boxes && m.boxes.length) || (m.edges && m.edges.length) ||
+        (m.texts && m.texts.length) || (m.lines && m.lines.length)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function boxSides(b) {
   const n = b.sides | 0;
   if (n === 3 || n === 5 || n === 6) return n;
@@ -687,7 +752,9 @@ function renderAll() {
   for (const b of state.boxes) {
     const el = document.createElement("div");
     const sides = boxSides(b);
-    el.className = "box" + (sides !== 4 ? " shaped sides-" + sides : "");
+    el.className = "box"
+      + (sides !== 4 ? " shaped sides-" + sides : "")
+      + (boxHasSubmapContent(b.id) ? " has-submap" : "");
     el.dataset.id = b.id;
     el.style.left = b.x + "px";
     el.style.top = b.y + "px";
@@ -728,7 +795,48 @@ function renderAll() {
   }
   applyClasses();
   renderLines();
+  renderStrokes();
   renderEdges();
+}
+
+function strokePointsAttr(points) {
+  return points.map(p => p[0] + "," + p[1]).join(" ");
+}
+
+function renderStrokes() {
+  strokeLayer.innerHTML = "";
+  const ns = "http://www.w3.org/2000/svg";
+  for (const s of (state.strokes || [])) {
+    if (!s.points || s.points.length < 2) continue;
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("class", "stroke-group" + (selected.has(s.id) ? " selected" : ""));
+    g.dataset.id = s.id;
+
+    const hit = document.createElementNS(ns, "polyline");
+    hit.setAttribute("class", "stroke-hit");
+    hit.setAttribute("points", strokePointsAttr(s.points));
+    hit.setAttribute("fill", "none");
+    hit.setAttribute("stroke", "transparent");
+    hit.setAttribute("stroke-width", "12");
+    g.appendChild(hit);
+
+    const line = document.createElementNS(ns, "polyline");
+    line.setAttribute("class", "stroke-line");
+    line.setAttribute("points", strokePointsAttr(s.points));
+    g.appendChild(line);
+
+    g.addEventListener("mousedown", (ev) => {
+      if (brushMode) return;
+      ev.stopPropagation();
+      if (!ev.shiftKey) selected.clear();
+      selected.add(s.id);
+      if (selectedEdge) { selectedEdge = null; renderEdges(); }
+      applyClasses();
+      renderStrokes();
+    });
+
+    strokeLayer.appendChild(g);
+  }
 }
 
 function renderLines() {
@@ -782,6 +890,9 @@ function applyClasses() {
     el.classList.toggle("selected", selected.has(el.dataset.id));
   }
   for (const el of lineLayer.querySelectorAll(".line-group")) {
+    el.classList.toggle("selected", selected.has(el.dataset.id));
+  }
+  for (const el of strokeLayer.querySelectorAll(".stroke-group")) {
     el.classList.toggle("selected", selected.has(el.dataset.id));
   }
 }
@@ -1334,6 +1445,7 @@ function attachBoxHandlers(el, b) {
 document.addEventListener("mousemove", (e) => {
   lastCursor.x = e.clientX;
   lastCursor.y = e.clientY;
+  if (activeStroke) { extendStroke(e); return; }
   if (pan) {
     viewport.x = pan.startVX + (e.clientX - pan.downX);
     viewport.y = pan.startVY + (e.clientY - pan.downY);
@@ -1382,6 +1494,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("mouseup", (e) => {
+  if (activeStroke) { finishStroke(); return; }
   if (pan) {
     pan = null;
     document.body.classList.remove("panning");
@@ -1619,6 +1732,83 @@ document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
   createBoxAt(dx, dy, { x: dx, y: dy });
 });
 
+function copySelection() {
+  if (selected.size === 0) return false;
+  const boxes = [], texts = [], lines = [], edges = [];
+  const boxIds = new Set();
+  for (const id of selected) {
+    const b = state.boxes.find(x => x.id === id);
+    if (b) {
+      const copy = { id: b.id, label: b.label, x: b.x, y: b.y };
+      if (b.sides) copy.sides = b.sides;
+      boxes.push(copy);
+      boxIds.add(b.id);
+      continue;
+    }
+    const t = findTextById(id);
+    if (t) { texts.push({ id: t.id, label: t.label, x: t.x, y: t.y }); continue; }
+    const l = findLineById(id);
+    if (l) { lines.push({ id: l.id, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 }); }
+  }
+  for (const e of state.edges) {
+    if (boxIds.has(e.from) && boxIds.has(e.to)) {
+      edges.push({ from: e.from, fromHandle: e.fromHandle || "", to: e.to, toHandle: e.toHandle || "" });
+    }
+  }
+  if (!boxes.length && !texts.length && !lines.length) return false;
+  clipboard = { boxes, texts, lines, edges, pasteOffset: 0 };
+  return true;
+}
+
+function cutSelection() {
+  if (!copySelection()) { setStatus("nothing to cut"); return; }
+  const n = selected.size;
+  deleteSelection();
+  setStatus("cut " + n + " items");
+}
+
+function pasteSelection() {
+  if (!clipboard) { setStatus("clipboard is empty"); return; }
+  clipboard.pasteOffset += 20;
+  const dx = clipboard.pasteOffset, dy = clipboard.pasteOffset;
+  const idMap = new Map();
+  selected.clear();
+  selectedEdge = null;
+  for (const b of clipboard.boxes) {
+    const newId = uid("b");
+    idMap.set(b.id, newId);
+    const copy = { id: newId, label: b.label, x: b.x + dx, y: b.y + dy };
+    if (b.sides) copy.sides = b.sides;
+    state.boxes.push(copy);
+    selected.add(newId);
+  }
+  for (const t of clipboard.texts) {
+    const newId = uid("t");
+    idMap.set(t.id, newId);
+    state.texts.push({ id: newId, label: t.label, x: t.x + dx, y: t.y + dy });
+    selected.add(newId);
+  }
+  for (const l of clipboard.lines) {
+    const newId = uid("l");
+    idMap.set(l.id, newId);
+    state.lines.push({
+      id: newId,
+      x1: l.x1 + dx, y1: l.y1 + dy,
+      x2: l.x2 + dx, y2: l.y2 + dy,
+    });
+    selected.add(newId);
+  }
+  for (const ed of clipboard.edges) {
+    const from = idMap.get(ed.from);
+    const to = idMap.get(ed.to);
+    if (!from || !to) continue;
+    state.edges.push({ from, fromHandle: ed.fromHandle, to, toHandle: ed.toHandle });
+  }
+  scheduleSave();
+  renderAll();
+  setStatus("pasted " + selected.size + " items");
+}
+
 function deleteSelection() {
   if (selected.size === 0) { setStatus("nothing selected"); return; }
   const ids = Array.from(selected);
@@ -1627,6 +1817,7 @@ function deleteSelection() {
   state.edges = state.edges.filter(e => !selected.has(e.from) && !selected.has(e.to));
   state.texts = state.texts.filter(t => !selected.has(t.id));
   state.lines = state.lines.filter(l => !selected.has(l.id));
+  state.strokes = (state.strokes || []).filter(s => !selected.has(s.id));
   // Drop each deleted box's submap and any descendants.
   for (const id of boxIds) {
     const removedPath = currentPath === "/" ? "/" + id : currentPath + "/" + id;
@@ -1696,6 +1887,23 @@ document.addEventListener("keydown", (e) => {
     setStatus("selected " + selected.size + " items");
     return;
   }
+  if (mod && !e.altKey && !e.shiftKey && (e.key === "c" || e.key === "C")) {
+    if (window.getSelection && String(window.getSelection())) return; // let browser copy text
+    e.preventDefault();
+    if (copySelection()) setStatus("copied " + selected.size + " items");
+    else setStatus("nothing to copy");
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && (e.key === "x" || e.key === "X")) {
+    e.preventDefault();
+    cutSelection();
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && (e.key === "v" || e.key === "V")) {
+    e.preventDefault();
+    pasteSelection();
+    return;
+  }
   if (!mod && !e.altKey && (e.key === "t" || e.key === "T")) {
     e.preventDefault();
     createTextAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
@@ -1706,27 +1914,53 @@ document.addEventListener("keydown", (e) => {
     createLineAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
     return;
   }
+  if (!mod && !e.altKey && (e.key === "b" || e.key === "B")) {
+    e.preventDefault();
+    setBrushMode(true);
+    return;
+  }
+  if (!mod && !e.altKey && (e.key === "v" || e.key === "V")) {
+    e.preventDefault();
+    setBrushMode(false);
+    return;
+  }
   if (!mod && !e.altKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
     if (selected.size === 0) return;
     const dir = e.key === "-" ? -1 : 1;
-    let changed = false;
+    // Capture each box's visual center *before* the shape change so we can
+    // re-anchor it after the new shape resizes the element.
+    const changes = [];
     for (const id of selected) {
       const bx = state.boxes.find(x => x.id === id);
       if (!bx) continue;
       const cur = boxSides(bx);
       const next = Math.max(3, Math.min(6, cur + dir));
       if (next === cur) continue;
+      const elOld = canvas.querySelector(`.box[data-id="${id}"]`);
+      const cx = bx.x + (elOld ? elOld.offsetWidth  : 0) / 2;
+      const cy = bx.y + (elOld ? elOld.offsetHeight : 0) / 2;
+      changes.push({ id, cx, cy });
       if (next === 4) delete bx.sides; else bx.sides = next;
-      changed = true;
     }
-    if (changed) {
+    if (changes.length) {
       e.preventDefault();
-      scheduleSave();
       renderAll();
+      for (const { id, cx, cy } of changes) {
+        const bx = state.boxes.find(x => x.id === id);
+        const elNew = canvas.querySelector(`.box[data-id="${id}"]`);
+        if (!bx || !elNew) continue;
+        bx.x = cx - elNew.offsetWidth  / 2;
+        bx.y = cy - elNew.offsetHeight / 2;
+        elNew.style.left = bx.x + "px";
+        elNew.style.top  = bx.y + "px";
+      }
+      renderEdges();
+      scheduleSave();
     }
     return;
   }
   if (e.key === "Escape") {
+    if (brushMode) { setBrushMode(false); return; }
     if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
     selected.clear();
     selectedEdge = null;
@@ -1753,6 +1987,7 @@ document.addEventListener("keydown", (e) => {
 
 document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  if (brushMode) { startStroke(e); return; }
   if (!e.shiftKey) selected.clear();
   if (selectedEdge) { selectedEdge = null; renderEdges(); }
   applyClasses();
@@ -1765,6 +2000,59 @@ document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   document.body.appendChild(bandEl);
   band = { startX: e.clientX, startY: e.clientY, el: bandEl };
 });
+
+function setBrushMode(on) {
+  if (brushMode === on) return;
+  brushMode = on;
+  document.body.classList.toggle("brush-mode", brushMode);
+  setStatus(brushMode ? "brush mode — drag to paint, V to exit" : "select mode");
+}
+
+function roundCoord(n) { return Math.round(n * 100) / 100; }
+
+function startStroke(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const x = roundCoord(toDataX(e.clientX));
+  const y = roundCoord(toDataY(e.clientY));
+  const id = uid("s");
+  const ns = "http://www.w3.org/2000/svg";
+  const g = document.createElementNS(ns, "g");
+  g.setAttribute("class", "stroke-group");
+  g.dataset.id = id;
+  const poly = document.createElementNS(ns, "polyline");
+  poly.setAttribute("class", "stroke-line");
+  poly.setAttribute("points", x + "," + y);
+  g.appendChild(poly);
+  strokeLayer.appendChild(g);
+  activeStroke = { id, points: [[x, y]], polyEl: poly };
+}
+
+function extendStroke(e) {
+  if (!activeStroke) return;
+  const x = roundCoord(toDataX(e.clientX));
+  const y = roundCoord(toDataY(e.clientY));
+  const last = activeStroke.points[activeStroke.points.length - 1];
+  // Skip points that are too close to keep storage compact.
+  if (Math.hypot(x - last[0], y - last[1]) < 2) return;
+  activeStroke.points.push([x, y]);
+  activeStroke.polyEl.setAttribute("points", strokePointsAttr(activeStroke.points));
+}
+
+function finishStroke() {
+  if (!activeStroke) return;
+  if (activeStroke.points.length >= 2) {
+    state.strokes ||= [];
+    state.strokes.push({ id: activeStroke.id, points: activeStroke.points });
+    scheduleSave();
+  } else {
+    // Drop the orphan SVG node from the live preview.
+    const g = activeStroke.polyEl.parentNode;
+    if (g && g.parentNode) g.parentNode.removeChild(g);
+  }
+  activeStroke = null;
+  renderStrokes();
+}
 
 // On window resize, recenter the map under the new viewport size — viewport-only,
 // no data mutation, so the file isn't dirtied.
