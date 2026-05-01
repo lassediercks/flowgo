@@ -85,6 +85,17 @@ import {
   startTextEdit,
   wireEdit,
 } from "./edit.ts";
+import {
+  applyClasses,
+  clearProximity,
+  renderAll,
+  renderEdges,
+  renderLines,
+  renderStrokes,
+  updateProximity,
+  wireProximity,
+  wireRender,
+} from "./render.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -142,6 +153,37 @@ function findItem(id) {
 
 function setStatus(_s) { /* hint area removed — keep callers harmless */ }
 
+// Render / proximity wiring. The render module reads live state via
+// these getters and asks main.ts to attach handlers to freshly built
+// DOM nodes (since the handler factories still live here).
+wireRender({
+  canvas,
+  lineLayer,
+  strokeLayer,
+  edgeLayer,
+  currentMap: () => state,
+  graph: () => graph,
+  currentPath: () => currentPath,
+  selected,
+  selectedEdge: () => selectedEdge,
+  setSelectedEdge: (e) => { selectedEdge = e; },
+  dropTargetId: () => dropTargetId,
+  nearTargetId: () => nearTargetId,
+  attachBoxHandlers: (el, b) => attachBoxHandlers(el, b),
+  attachTextHandlers: (el, t) => attachTextHandlers(el, t),
+  attachLineHandlers: (g, ln, hit, h1, h2, l) =>
+    attachLineHandlers(g, ln, hit, h1, h2, l),
+  isBrushMode: () => isBrushMode(),
+  setStatus: (s) => setStatus(s),
+});
+wireProximity({
+  canvas,
+  currentMap: () => state,
+  link: () => link,
+  nearTargetId: () => nearTargetId,
+  setNearTargetId: (id) => { nearTargetId = id; },
+});
+
 // Path navigation + persistence/history live in their own modules.
 // Wire the host's live state in once at startup.
 wireNavigation({
@@ -189,241 +231,8 @@ wirePersistence({
 const boxHasSubmapContent = (boxId) =>
   hasSubmapContent(graph, currentPath, boxId);
 
-function renderAll() {
-  canvas.innerHTML = "";
-  for (const b of state.boxes) {
-    const el = document.createElement("div");
-    const sides = boxSides(b);
-    const palette = (b.palette >= 2 && b.palette <= 9) ? b.palette : 1;
-    const font = (b.font >= 2 && b.font <= 9) ? b.font : 1;
-    el.className = "box"
-      + (sides !== 4 ? " shaped sides-" + sides : "")
-      + (boxHasSubmapContent(b.id) ? " has-submap" : "")
-      + (palette !== 1 ? " palette-" + palette : "")
-      + (font !== 1 ? " font-" + font : "");
-    el.dataset.id = b.id;
-    el.style.left = b.x + "px";
-    el.style.top = b.y + "px";
-    if (sides !== 4) {
-      const ns = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(ns, "svg");
-      svg.setAttribute("class", "shape-svg");
-      svg.setAttribute("viewBox", "0 0 100 100");
-      const poly = document.createElementNS(ns, "polygon");
-      poly.setAttribute("class", "shape-poly");
-      poly.setAttribute("points", polygonPointsForSides(sides));
-      poly.setAttribute("vector-effect", "non-scaling-stroke");
-      svg.appendChild(poly);
-      el.appendChild(svg);
-    }
-    const label = document.createElement("span");
-    label.className = "box-label";
-    label.textContent = b.label;
-    el.appendChild(label);
-    for (const code of HANDLE_CODES) {
-      const h = document.createElement("div");
-      h.className = "handle h-" + code;
-      h.dataset.handle = code;
-      el.appendChild(h);
-    }
-    canvas.appendChild(el);
-    attachBoxHandlers(el, b);
-  }
-  for (const t of state.texts) {
-    const el = document.createElement("div");
-    const tPalette = (t.palette >= 2 && t.palette <= 9) ? t.palette : 1;
-    const tFont = (t.font >= 2 && t.font <= 9) ? t.font : 1;
-    el.className = "text-item"
-      + (tPalette !== 1 ? " palette-" + tPalette : "")
-      + (tFont !== 1 ? " font-" + tFont : "");
-    el.dataset.id = t.id;
-    el.style.left = t.x + "px";
-    el.style.top = t.y + "px";
-    el.textContent = t.label;
-    canvas.appendChild(el);
-    attachTextHandlers(el, t);
-  }
-  applyClasses();
-  renderLines();
-  renderStrokes();
-  renderEdges();
-}
-
-function strokePointsAttr(points) {
-  return points.map(p => p[0] + "," + p[1]).join(" ");
-}
-
-function renderStrokes() {
-  strokeLayer.innerHTML = "";
-  const ns = "http://www.w3.org/2000/svg";
-  for (const s of (state.strokes || [])) {
-    if (!s.points || s.points.length < 2) continue;
-    const d = strokePathD(s.points);
-    const g = document.createElementNS(ns, "g");
-    g.setAttribute("class", "stroke-group" + (selected.has(s.id) ? " selected" : ""));
-    g.dataset.id = s.id;
-
-    const hit = document.createElementNS(ns, "path");
-    hit.setAttribute("class", "stroke-hit");
-    hit.setAttribute("d", d);
-    hit.setAttribute("fill", "none");
-    hit.setAttribute("stroke", "transparent");
-    hit.setAttribute("stroke-width", "12");
-    g.appendChild(hit);
-
-    const line = document.createElementNS(ns, "path");
-    line.setAttribute("class", "stroke-line");
-    line.setAttribute("d", d);
-    line.setAttribute("fill", "none");
-    g.appendChild(line);
-
-    g.addEventListener("mousedown", (ev) => {
-      if (isBrushMode()) return;
-      ev.stopPropagation();
-      if (!ev.shiftKey) selected.clear();
-      selected.add(s.id);
-      if (selectedEdge) { selectedEdge = null; renderEdges(); }
-      applyClasses();
-      renderStrokes();
-    });
-
-    strokeLayer.appendChild(g);
-  }
-}
-
-function renderLines() {
-  lineLayer.innerHTML = "";
-  const ns = "http://www.w3.org/2000/svg";
-  for (const l of state.lines) {
-    const g = document.createElementNS(ns, "g");
-    g.setAttribute("class", "line-group" + (selected.has(l.id) ? " selected" : ""));
-    g.dataset.id = l.id;
-
-    const hit = document.createElementNS(ns, "line");
-    hit.setAttribute("class", "line-hit");
-    hit.setAttribute("x1", l.x1); hit.setAttribute("y1", l.y1);
-    hit.setAttribute("x2", l.x2); hit.setAttribute("y2", l.y2);
-    hit.setAttribute("stroke", "transparent");
-    hit.setAttribute("stroke-width", "12");
-    g.appendChild(hit);
-
-    const line = document.createElementNS(ns, "line");
-    line.setAttribute("class", "line-line");
-    line.setAttribute("x1", l.x1); line.setAttribute("y1", l.y1);
-    line.setAttribute("x2", l.x2); line.setAttribute("y2", l.y2);
-    g.appendChild(line);
-
-    const h1 = document.createElementNS(ns, "circle");
-    h1.setAttribute("class", "line-handle");
-    h1.setAttribute("cx", l.x1); h1.setAttribute("cy", l.y1);
-    h1.setAttribute("r", 6);
-    h1.dataset.endpoint = "1";
-    g.appendChild(h1);
-
-    const h2 = document.createElementNS(ns, "circle");
-    h2.setAttribute("class", "line-handle");
-    h2.setAttribute("cx", l.x2); h2.setAttribute("cy", l.y2);
-    h2.setAttribute("r", 6);
-    h2.dataset.endpoint = "2";
-    g.appendChild(h2);
-
-    attachLineHandlers(g, line, hit, h1, h2, l);
-    lineLayer.appendChild(g);
-  }
-}
-
-function applyClasses() {
-  for (const el of canvas.querySelectorAll(".box")) {
-    el.classList.toggle("selected", selected.has(el.dataset.id));
-    el.classList.toggle("drop-target", el.dataset.id === dropTargetId);
-    el.classList.toggle("proximity-target", el.dataset.id === nearTargetId);
-  }
-  for (const el of canvas.querySelectorAll(".text-item")) {
-    el.classList.toggle("selected", selected.has(el.dataset.id));
-  }
-  for (const el of lineLayer.querySelectorAll(".line-group")) {
-    el.classList.toggle("selected", selected.has(el.dataset.id));
-  }
-  for (const el of strokeLayer.querySelectorAll(".stroke-group")) {
-    el.classList.toggle("selected", selected.has(el.dataset.id));
-  }
-}
-
-const PROXIMITY_PX = 60;
-function updateProximity(cx, cy) {
-  let best = null, bestD = Infinity;
-  for (const b of state.boxes) {
-    if (link && b.id === link.fromId) continue;
-    const el = canvas.querySelector(`.box[data-id="${b.id}"]`);
-    if (!el) continue;
-    const x1 = b.x, y1 = b.y;
-    const x2 = b.x + el.offsetWidth, y2 = b.y + el.offsetHeight;
-    const ddx = Math.max(x1 - cx, 0, cx - x2);
-    const ddy = Math.max(y1 - cy, 0, cy - y2);
-    const d = Math.hypot(ddx, ddy);
-    if (d < bestD && d <= PROXIMITY_PX) { bestD = d; best = b.id; }
-  }
-  if (best !== nearTargetId) {
-    nearTargetId = best;
-    applyClasses();
-  }
-}
-
-function clearProximity() {
-  if (nearTargetId !== null) {
-    nearTargetId = null;
-    applyClasses();
-  }
-}
-
-function renderEdges() {
-  edgeLayer.innerHTML = "";
-  const ns = "http://www.w3.org/2000/svg";
-  for (const e of state.edges) {
-    const a = state.boxes.find(b => b.id === e.from);
-    const b = state.boxes.find(b => b.id === e.to);
-    if (!a || !b) continue;
-    const ea = canvas.querySelector(`.box[data-id="${a.id}"]`);
-    const eb = canvas.querySelector(`.box[data-id="${b.id}"]`);
-    if (!ea || !eb) continue;
-    const acx = a.x + ea.offsetWidth / 2, acy = a.y + ea.offsetHeight / 2;
-    const bcx = b.x + eb.offsetWidth / 2, bcy = b.y + eb.offsetHeight / 2;
-    const [ax, ay] = endpointAnchor(a, ea, e.fromHandle, bcx, bcy);
-    const [bx, by] = endpointAnchor(b, eb, e.toHandle, acx, acy);
-
-    const g = document.createElementNS(ns, "g");
-    g.setAttribute("class", "edge-group" + (e === selectedEdge ? " selected" : ""));
-
-    const hit = document.createElementNS(ns, "line");
-    hit.setAttribute("class", "edge-hit");
-    hit.setAttribute("x1", ax); hit.setAttribute("y1", ay);
-    hit.setAttribute("x2", bx); hit.setAttribute("y2", by);
-    hit.setAttribute("stroke", "transparent");
-    hit.setAttribute("stroke-width", "12");
-    g.appendChild(hit);
-
-    const line = document.createElementNS(ns, "line");
-    line.setAttribute("class", "edge-line");
-    line.setAttribute("x1", ax); line.setAttribute("y1", ay);
-    line.setAttribute("x2", bx); line.setAttribute("y2", by);
-    g.appendChild(line);
-
-    g.addEventListener("mousedown", (ev) => {
-      ev.stopPropagation();
-      selectedEdge = e;
-      selected.clear();
-      applyClasses();
-      renderEdges();
-      setStatus("edge selected — press Delete to remove");
-    });
-
-    edgeLayer.appendChild(g);
-  }
-}
-
-// Handle dots still render with a CSS offset (-20px) so they're easy to grab,
-// but edge endpoints anchor to the box's actual border so the line visually
-// Edge-anchor adapters live in ./anchors.ts.
+// renderAll / renderEdges / renderLines / renderStrokes / applyClasses /
+// updateProximity / clearProximity all live in ./render.ts.
 
 // Mutate the live state.edges in-place so existing call sites keep
 // working; the actual replacement logic is the pure helper.
