@@ -55,6 +55,27 @@
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
 
+  .box.shaped {
+    background: transparent; border: 0; border-radius: 0;
+    padding: 18px 24px; box-shadow: none;
+    isolation: isolate;
+    aspect-ratio: 1 / 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .box.shaped.sides-3 {
+    padding: 50% 18px 12px;
+    align-items: flex-end;
+  }
+  .box.shaped.dragging { box-shadow: none; }
+  .box.shaped > .shape-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible; z-index: -1;
+  }
+  .box.shaped .shape-poly { fill: #fff; stroke: #333; stroke-width: 2; }
+  .box.shaped.selected .shape-poly { stroke: #07f; }
+  .box.shaped.drop-target .shape-poly { stroke: #2a7; stroke-width: 4; }
+  .box.shaped[contenteditable="true"] .shape-poly { fill: #ffffe0; }
+
   .text-item {
     position: absolute; padding: 4px 6px;
     background: transparent; border: 1px dashed transparent;
@@ -189,6 +210,7 @@
       <tr><td><kbd>Escape</kbd> while editing</td><td>Cancel the edit</td></tr>
       <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
       <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>-</kbd> with boxes selected</td><td>Cycle shape: triangle → rectangle → pentagon → hexagon</td></tr>
       <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
     </table>
 
@@ -526,7 +548,9 @@ function serializeGraph(g) {
     if (i > 0) out += "\n";
     if (multi || m.path !== "/") out += "map " + m.path + "\n";
     for (const b of (m.boxes || [])) {
-      out += "box " + b.id + " " + flowgoQuote(b.label || "") + " " + flowgoNum(b.x) + " " + flowgoNum(b.y) + "\n";
+      let line = "box " + b.id + " " + flowgoQuote(b.label || "") + " " + flowgoNum(b.x) + " " + flowgoNum(b.y);
+      if (b.sides === 3 || b.sides === 5 || b.sides === 6) line += " " + b.sides;
+      out += line + "\n";
     }
     if ((m.boxes || []).length && (m.edges || []).length) out += "\n";
     for (const e of (m.edges || [])) {
@@ -631,15 +655,57 @@ function redo() {
   setStatus("redo");
 }
 
+function boxSides(b) {
+  const n = b.sides | 0;
+  if (n === 3 || n === 5 || n === 6) return n;
+  return 4;
+}
+
+// Vertices in a 0..100 unit-box space, used by both SVG rendering and edge anchoring.
+function polygonVerticesFor(sides) {
+  if (sides === 3) {
+    // Isoceles triangle, apex up, fills the bounding box.
+    return [[50, 0], [100, 100], [0, 100]];
+  }
+  const verts = [];
+  for (let i = 0; i < sides; i++) {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / sides;
+    verts.push([50 + 50 * Math.cos(a), 50 + 50 * Math.sin(a)]);
+  }
+  return verts;
+}
+
+function polygonPointsForSides(sides) {
+  return polygonVerticesFor(sides)
+    .map(([x, y]) => x.toFixed(2) + "," + y.toFixed(2))
+    .join(" ");
+}
+
 function renderAll() {
   canvas.innerHTML = "";
   for (const b of state.boxes) {
     const el = document.createElement("div");
-    el.className = "box";
+    const sides = boxSides(b);
+    el.className = "box" + (sides !== 4 ? " shaped sides-" + sides : "");
     el.dataset.id = b.id;
     el.style.left = b.x + "px";
     el.style.top = b.y + "px";
-    el.textContent = b.label;
+    if (sides !== 4) {
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("class", "shape-svg");
+      svg.setAttribute("viewBox", "0 0 100 100");
+      const poly = document.createElementNS(ns, "polygon");
+      poly.setAttribute("class", "shape-poly");
+      poly.setAttribute("points", polygonPointsForSides(sides));
+      poly.setAttribute("vector-effect", "non-scaling-stroke");
+      svg.appendChild(poly);
+      el.appendChild(svg);
+    }
+    const label = document.createElement("span");
+    label.className = "box-label";
+    label.textContent = b.label;
+    el.appendChild(label);
     for (const code of HANDLE_CODES) {
       const h = document.createElement("div");
       h.className = "handle h-" + code;
@@ -823,7 +889,36 @@ function nearestHandle(b, el, fx, fy) {
   return best;
 }
 
+function polygonAnchor(b, el, towardX, towardY) {
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const cx = b.x + w / 2, cy = b.y + h / 2;
+  const sides = boxSides(b);
+  const dx = towardX - cx, dy = towardY - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  // Map unit-box vertices into screen coordinates.
+  const verts = polygonVerticesFor(sides).map(([ux, uy]) =>
+    [b.x + (ux / 100) * w, b.y + (uy / 100) * h]);
+  // Ray P(t) = (cx,cy) + t*(dx,dy), t > 0. For each edge V[i]->V[i+1],
+  // solve for the intersection and pick the smallest valid t.
+  let bestT = Infinity, hit = null;
+  for (let i = 0; i < sides; i++) {
+    const [x1, y1] = verts[i];
+    const [x2, y2] = verts[(i + 1) % sides];
+    const sx = x2 - x1, sy = y2 - y1;
+    const denom = dx * sy - dy * sx;
+    if (Math.abs(denom) < 1e-9) continue; // parallel
+    const t = ((x1 - cx) * sy - (y1 - cy) * sx) / denom;
+    const u = ((x1 - cx) * dy - (y1 - cy) * dx) / denom;
+    if (t > 0 && u >= 0 && u <= 1 && t < bestT) {
+      bestT = t;
+      hit = [cx + dx * t, cy + dy * t];
+    }
+  }
+  return hit || [cx, cy];
+}
+
 function endpointAnchor(b, el, code, towardX, towardY) {
+  if (boxSides(b) !== 4) return polygonAnchor(b, el, towardX, towardY);
   if (!code) code = nearestHandle(b, el, towardX, towardY);
   return handleAnchor(el, b, code);
 }
@@ -854,7 +949,9 @@ function cloneSelection() {
       const newId = uid("b");
       idMap.set(id, newId);
       cloneBoxIds.add(newId);
-      state.boxes.push({ id: newId, label: b.label, x: b.x, y: b.y });
+      const copy = { id: newId, label: b.label, x: b.x, y: b.y };
+      if (b.sides) copy.sides = b.sides;
+      state.boxes.push(copy);
       continue;
     }
     const t = findTextById(id);
@@ -1414,31 +1511,22 @@ function startEdit(el, b, opts) {
   if (editing) return;
   editing = el;
   const cancelDeletes = opts && opts.cancelDeletes;
-  // Hide handles by clearing them while editing — easier than CSS on text node only.
+  const labelEl = el.querySelector(".box-label");
   el.contentEditable = "true";
-  el.textContent = b.label;
+  labelEl.textContent = b.label;
   el.focus();
   const range = document.createRange();
-  range.selectNodeContents(el);
+  range.selectNodeContents(labelEl);
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
-
-  const restoreHandles = () => {
-    for (const code of HANDLE_CODES) {
-      const h = document.createElement("div");
-      h.className = "handle h-" + code;
-      h.dataset.handle = code;
-      el.appendChild(h);
-    }
-  };
 
   const finish = (commit) => {
     el.removeEventListener("blur", onBlur);
     el.removeEventListener("keydown", onKey);
     el.contentEditable = "false";
     editing = null;
-    const newLabel = el.textContent.replace(/\s+/g, " ").trim();
+    const newLabel = labelEl.textContent.replace(/\s+/g, " ").trim();
     if (!commit && cancelDeletes) {
       // Roll back: drop the just-spawned box and any of its edges.
       state.boxes = state.boxes.filter(x => x.id !== b.id);
@@ -1457,8 +1545,7 @@ function startEdit(el, b, opts) {
       b.label = newLabel;
       scheduleSave();
     }
-    el.textContent = b.label;
-    restoreHandles();
+    labelEl.textContent = b.label;
     renderEdges();
   };
   const onBlur = () => finish(true);
@@ -1605,6 +1692,26 @@ document.addEventListener("keydown", (e) => {
   if (!mod && !e.altKey && (e.key === "l" || e.key === "L")) {
     e.preventDefault();
     createLineAt(toDataX(lastCursor.x), toDataY(lastCursor.y));
+    return;
+  }
+  if (!mod && !e.altKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
+    if (selected.size === 0) return;
+    const dir = e.key === "-" ? -1 : 1;
+    let changed = false;
+    for (const id of selected) {
+      const bx = state.boxes.find(x => x.id === id);
+      if (!bx) continue;
+      const cur = boxSides(bx);
+      const next = Math.max(3, Math.min(6, cur + dir));
+      if (next === cur) continue;
+      if (next === 4) delete bx.sides; else bx.sides = next;
+      changed = true;
+    }
+    if (changed) {
+      e.preventDefault();
+      scheduleSave();
+      renderAll();
+    }
     return;
   }
   if (e.key === "Escape") {

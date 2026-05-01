@@ -29,6 +29,7 @@ type Box struct {
 	Label string  `json:"label"`
 	X     float64 `json:"x"`
 	Y     float64 `json:"y"`
+	Sides int     `json:"sides,omitempty"`
 }
 
 type Edge struct {
@@ -220,7 +221,17 @@ func parse(s string) (Graph, error) {
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad y: %v", lineNo, err)
 			}
-			g.Maps[cur].Boxes = append(g.Maps[cur].Boxes, Box{ID: toks[1], Label: toks[2], X: x, Y: y})
+			box := Box{ID: toks[1], Label: toks[2], X: x, Y: y}
+			if len(toks) >= 6 {
+				sides, err := strconv.Atoi(toks[5])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad sides: %v", lineNo, err)
+				}
+				if sides == 3 || sides == 5 || sides == 6 {
+					box.Sides = sides
+				}
+			}
+			g.Maps[cur].Boxes = append(g.Maps[cur].Boxes, box)
 		case "edge":
 			if len(toks) < 3 {
 				return g, fmt.Errorf("line %d: edge needs from to", lineNo)
@@ -309,7 +320,11 @@ func serialize(g Graph) string {
 			fmt.Fprintf(&b, "map %s\n", m.Path)
 		}
 		for _, box := range m.Boxes {
-			fmt.Fprintf(&b, "box %s %s %g %g\n", box.ID, quote(box.Label), box.X, box.Y)
+			if box.Sides == 3 || box.Sides == 5 || box.Sides == 6 {
+				fmt.Fprintf(&b, "box %s %s %g %g %d\n", box.ID, quote(box.Label), box.X, box.Y, box.Sides)
+			} else {
+				fmt.Fprintf(&b, "box %s %s %g %g\n", box.ID, quote(box.Label), box.X, box.Y)
+			}
 		}
 		if len(m.Boxes) > 0 && len(m.Edges) > 0 {
 			b.WriteString("\n")
