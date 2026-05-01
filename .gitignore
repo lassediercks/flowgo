@@ -4,3 +4,9 @@ flowgo
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+# Frontend toolchain (Phase 2: Vite-bundled editor + Vitest)
+# `dist/index.html` is the Go-embedded artifact and IS committed —
+# fresh checkouts must build the binary without running npm first.
+node_modules
+*.tsbuildinfo

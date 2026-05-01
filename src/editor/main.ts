@@ -1,412 +1,64 @@
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>flowgo</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; font: 14px system-ui, sans-serif; }
-  #toolbar {
-    position: fixed; top: 8px; left: 8px; z-index: 10;
-    background: #fff; border: 1px solid #ccc; border-radius: 6px;
-    padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
-  }
-  #toolbar button { margin-right: 6px; }
-  #version {
-    position: fixed; bottom: 6px; left: 8px;
-    color: #999; font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    pointer-events: none;
-  }
-  #feedbackBtn {
-    position: fixed; bottom: 8px; right: 8px; z-index: 11;
-    background: #fff; border: 1px solid #ccc; border-radius: 6px;
-    padding: 6px 10px; font-size: 12px; color: #444;
-    text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.1);
-  }
-  #feedbackBtn:hover { background: #f0f0f0; color: #222; }
-  #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
-  #path .seg { cursor: pointer; }
-  #path .seg:hover { text-decoration: underline; }
-  #path .sep { color: #aaa; }
-  #bg-layer {
-    position: absolute; inset: 0; z-index: 0;
-    background-color: #fafafa;
-    background-image:
-      linear-gradient(to right,  rgba(0,0,0,.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0,0,0,.05) 1px, transparent 1px),
-      linear-gradient(to right,  rgba(0,0,0,.10) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0,0,0,.10) 1px, transparent 1px);
-    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
-  }
-  #bg-svg {
-    position: absolute; inset: 0; z-index: 1;
-    width: 100%; height: 100%;
-    pointer-events: none;
-  }
-  #canvas {
-    position: absolute; inset: 0; z-index: 2;
-    background: transparent;
-    pointer-events: none;
-  }
-  #canvas .box, #canvas .text-item { pointer-events: auto; }
-  .box {
-    position: absolute; min-width: 80px; padding: 0.55em 0.85em;
-    background: #fff; border: 2px solid #333; border-radius: 6px;
-    user-select: none;
-    box-shadow: 0 1px 2px rgba(0,0,0,.1);
-    cursor: grab;
-    text-align: center;
-    line-height: 1.2;
-  }
-  .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
-  .box.has-submap { box-shadow: 4px 4px 0 0 #222; }
-  .box.has-submap.dragging { box-shadow: 6px 6px 0 0 #222, 0 4px 10px rgba(0,0,0,.2); }
-  .box.shaped.has-submap { box-shadow: none; }
-  .box.shaped.has-submap > .shape-svg { filter: drop-shadow(4px 4px 0 #222); }
-  .box.selected { border-color: #07f; }
-  .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
-  .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
+// @ts-nocheck — strict-typing this 1800-line imperative file in a
+// single pass would be a multi-hundred-error blocker. The disciplined
+// path is to keep peeling pure functions out into src/graph/* (where
+// they're already strict-typed and tested) and let this file shrink.
+//
+// Pure helpers live in their own typed modules (src/graph/*) and are
+// covered by Vitest. This file is the imperative editor glue that
+// wires them to the DOM; future phases will keep extracting more.
+import {
+  MAX_LABEL_LEN,
+  addOrReplaceEdge as addOrReplaceEdgePure,
+  boxSides,
+  collectIds,
+  flowgoNum,
+  flowgoQuote,
+  handleAnchor as handleAnchorPure,
+  hasSubmapContent,
+  nearestHandle as nearestHandlePure,
+  nextUid,
+  polygonAnchor as polygonAnchorPure,
+  polygonPointsForSides,
+  polygonVerticesFor,
+  rectAnchor,
+  serializeGraph as serializeGraphPure,
+  simplifyStroke,
+  strokePathD,
+} from "../index.ts";
+import { attachHelpListeners, isHelpOpen, setHelpOpen } from "./help.ts";
+import {
+  applyViewport,
+  recenter as recenterPure,
+  toDataX,
+  toDataY,
+  viewport,
+} from "./viewport.ts";
+import {
+  extendStroke,
+  finishStroke,
+  isBrushMode,
+  isPainting,
+  setBrushMode,
+  startStroke,
+  wireBrush,
+} from "./brush.ts";
+import {
+  copySelection,
+  cutSelection,
+  pasteSelection,
+  wireClipboard,
+} from "./clipboard.ts";
 
-  .box.shaped {
-    background: transparent; border: 0; border-radius: 0;
-    padding: 1.2em 1.6em; box-shadow: none;
-    isolation: isolate;
-    box-sizing: border-box;
-    aspect-ratio: 1 / 1;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .box.shaped.sides-3 {
-    padding: 1.2em 1.2em 0.8em;
-    align-items: flex-end;
-  }
-  .box.shaped.dragging { box-shadow: none; }
-  .box.shaped > .shape-svg {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    pointer-events: none; overflow: visible; z-index: -1;
-  }
-  .box.shaped .shape-poly { fill: #fff; stroke: #333; stroke-width: 2; }
-  .box.shaped.selected .shape-poly { stroke: #07f; }
-  .box.shaped.drop-target .shape-poly { stroke: #2a7; stroke-width: 4; }
-  .box.shaped[contenteditable="true"] .shape-poly { fill: #ffffe0; }
-
-  /* Palette: 1 = default (white/black). 2 = inverted. 3-9 = standard hues. */
-  .box.palette-2 { background: #111; border-color: #fff; color: #fff; }
-  .box.palette-3 { background: #fecaca; border-color: #b91c1c; color: #7f1d1d; }
-  .box.palette-4 { background: #fed7aa; border-color: #c2410c; color: #7c2d12; }
-  .box.palette-5 { background: #fef9c3; border-color: #a16207; color: #713f12; }
-  .box.palette-6 { background: #bbf7d0; border-color: #15803d; color: #14532d; }
-  .box.palette-7 { background: #bfdbfe; border-color: #1d4ed8; color: #1e3a8a; }
-  .box.palette-8 { background: #ddd6fe; border-color: #6d28d9; color: #4c1d95; }
-  .box.palette-9 { background: #e5e7eb; border-color: #374151; color: #111827; }
-  .box.shaped.palette-2 .shape-poly { fill: #111; stroke: #fff; }
-  .box.shaped.palette-3 .shape-poly { fill: #fecaca; stroke: #b91c1c; }
-  .box.shaped.palette-4 .shape-poly { fill: #fed7aa; stroke: #c2410c; }
-  .box.shaped.palette-5 .shape-poly { fill: #fef9c3; stroke: #a16207; }
-  .box.shaped.palette-6 .shape-poly { fill: #bbf7d0; stroke: #15803d; }
-  .box.shaped.palette-7 .shape-poly { fill: #bfdbfe; stroke: #1d4ed8; }
-  .box.shaped.palette-8 .shape-poly { fill: #ddd6fe; stroke: #6d28d9; }
-  .box.shaped.palette-9 .shape-poly { fill: #e5e7eb; stroke: #374151; }
-  .box.shaped[class*="palette-"] { background: transparent; }
-
-  /* Font-size scale: 1 = default (14px). 2-9 step monotonically larger. */
-  .box.font-2 { font-size: 16px; }
-  .box.font-3 { font-size: 18px; }
-  .box.font-4 { font-size: 20px; }
-  .box.font-5 { font-size: 24px; }
-  .box.font-6 { font-size: 28px; }
-  .box.font-7 { font-size: 34px; }
-  .box.font-8 { font-size: 42px; }
-  .box.font-9 { font-size: 56px; }
-
-  .text-item {
-    position: absolute; padding: 4px 6px;
-    background: transparent; border: 1px dashed transparent;
-    user-select: none; cursor: grab;
-    font-size: 14px; color: #222;
-    line-height: 1.3;
-    border-radius: 4px;
-  }
-  .text-item.dragging { cursor: grabbing; }
-  .text-item.selected { border-color: #07f; background: rgba(0,119,255,.05); }
-  .text-item[contenteditable="true"] {
-    cursor: text; user-select: text; outline: none;
-    background: #ffffe0; border-color: #aaa;
-  }
-
-  .stroke-group .stroke-hit { pointer-events: stroke; cursor: pointer; }
-  .stroke-line { fill: none; stroke: #333; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-  .stroke-group.selected .stroke-line { stroke: #07f; }
-
-  body.brush-mode,
-  body.brush-mode #bg-layer,
-  body.brush-mode #canvas,
-  body.brush-mode .box,
-  body.brush-mode .text-item {
-    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M3 21l3-1 9-9-2-2-9 9-1 3z' fill='%23333' stroke='%23000' stroke-width='1'/><path d='M14 9l4-4-2-2-4 4z' fill='%23a60' stroke='%23000' stroke-width='1'/></svg>") 2 22, crosshair;
-  }
-  body.brush-mode .handle { display: none; }
-  body.brush-mode #canvas .box,
-  body.brush-mode #canvas .text-item,
-  body.brush-mode .line-group,
-  body.brush-mode .stroke-group,
-  body.brush-mode .edge-group { pointer-events: none; }
-
-  .line-group .line-hit { pointer-events: stroke; cursor: grab; }
-  .line-group.dragging .line-hit { cursor: grabbing; }
-  .line-line { stroke: #555; stroke-width: 2; }
-  .line-group.selected .line-line { stroke: #07f; stroke-width: 3; }
-  .line-handle {
-    fill: #07f; stroke: #fff; stroke-width: 2;
-    pointer-events: all; cursor: crosshair;
-    display: none;
-  }
-  .line-group.selected .line-handle { display: inline; }
-  .line-handle:hover { fill: #2a7; }
-
-  .handle {
-    position: absolute; width: 12px; height: 12px;
-    background: #07f; border: 2px solid #fff; border-radius: 50%;
-    box-sizing: border-box; cursor: crosshair; z-index: 5;
-    opacity: 0; transition: opacity .12s;
-  }
-  .box:hover .handle, .handle.active, .box.proximity-target .handle { opacity: 1; }
-  .box[contenteditable="true"] .handle { display: none; }
-
-  .h-t  { top: -20px;    left: 50%;     transform: translateX(-50%); }
-  .h-r  { top: 50%;      right: -20px;  transform: translateY(-50%); }
-  .h-b  { bottom: -20px; left: 50%;     transform: translateX(-50%); }
-  .h-l  { top: 50%;      left: -20px;   transform: translateY(-50%); }
-  .h-tl { top: -20px;    left: -20px; }
-  .h-tr { top: -20px;    right: -20px; }
-  .h-bl { bottom: -20px; left: -20px; }
-  .h-br { bottom: -20px; right: -20px; }
-
-  svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 1; }
-  .edge-group { pointer-events: none; }
-  .edge-hit { pointer-events: stroke; cursor: pointer; }
-  .edge-line { stroke: #333; stroke-width: 2; }
-  .edge-group.selected .edge-line { stroke: #07f; stroke-width: 3; }
-  .selection-band {
-    position: fixed; z-index: 6; pointer-events: none;
-    border: 1px dashed #07f; background: rgba(0,119,255,.08);
-  }
-  body.panning, body.panning * { cursor: grabbing !important; }
-
-  #helpBtn {
-    position: fixed; top: 8px; right: 8px; z-index: 11;
-    width: 32px; height: 32px; border-radius: 50%;
-    background: #fff; border: 1px solid #ccc;
-    font-size: 16px; font-weight: bold; color: #555;
-    cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.1);
-    line-height: 1;
-  }
-  #helpBtn:hover { background: #f0f0f0; }
-
-  #helpOverlay {
-    position: fixed; inset: 0; z-index: 100;
-    background: rgba(0,0,0,.45);
-    display: flex; align-items: center; justify-content: center;
-  }
-  #helpOverlay.hidden { display: none; }
-  #helpModal {
-    background: #fff; border-radius: 10px; padding: 24px 28px;
-    max-width: 720px; width: 90%; max-height: 80vh; overflow-y: auto;
-    box-shadow: 0 8px 32px rgba(0,0,0,.3);
-    position: relative;
-  }
-  #helpModal h2 { margin: 0 0 4px 0; font-size: 18px; }
-  #helpModal .sub { color: #777; font-size: 12px; margin-bottom: 14px; }
-  #helpModal h3 {
-    margin: 18px 0 6px 0; color: #555; font-size: 11px;
-    text-transform: uppercase; letter-spacing: .8px;
-  }
-  #helpModal table { border-collapse: collapse; width: 100%; }
-  #helpModal td { padding: 5px 10px 5px 0; vertical-align: top; font-size: 13px; }
-  #helpModal td:first-child { white-space: nowrap; color: #333; width: 1%; }
-  #helpModal td:last-child { color: #555; }
-  #helpModal kbd {
-    display: inline-block; padding: 1px 6px;
-    border: 1px solid #ccc; border-bottom-width: 2px;
-    border-radius: 4px; background: #f7f7f7;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-    color: #333;
-  }
-  #helpClose {
-    position: absolute; top: 8px; right: 12px;
-    background: transparent; border: 0; font-size: 24px;
-    cursor: pointer; color: #888; line-height: 1; padding: 0;
-  }
-  #helpClose:hover { color: #333; }
-  .help { color: #666; font-size: 12px; margin-left: 8px; }
-</style>
-</head>
-<body>
-<div id="toolbar">
-  <button id="upBtn">↑ Up</button>
-  <button id="downloadBtn" style="display:none">Download .flowgo</button>
-  <button id="reshareBtn"  style="display:none">Save as new share</button>
-  <span id="path"></span>
-</div>
-<div id="bg-layer"></div>
-<svg id="bg-svg">
-  <g id="stroke-layer"></g>
-  <g id="line-layer"></g>
-</svg>
-<div id="canvas"></div>
-<button id="helpBtn" title="Help (keybinds)" aria-label="Help">?</button>
-
-<div id="helpOverlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-  <div id="helpModal">
-    <button id="helpClose" aria-label="Close help">×</button>
-    <h2 id="helpTitle">flowgo — keybinds &amp; capabilities</h2>
-    <div class="sub">Tip: <kbd>⌘</kbd> on macOS, <kbd>Ctrl</kbd> on Windows / Linux.</div>
-
-    <h3>Boxes</h3>
-    <table>
-      <tr><td>Double-click empty canvas</td><td>Add a new box at the cursor (auto-edits the label)</td></tr>
-      <tr><td><kbd>+ Box</kbd> button</td><td>Add a new box at a random position</td></tr>
-      <tr><td>Click a box</td><td>Select it (replaces the current selection)</td></tr>
-      <tr><td>Double-click a box</td><td>Edit its label inline</td></tr>
-      <tr><td><kbd>Enter</kbd> while editing</td><td>Commit the new label</td></tr>
-      <tr><td><kbd>Escape</kbd> while editing</td><td>Cancel the edit</td></tr>
-      <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
-      <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
-      <tr><td><kbd>+</kbd> / <kbd>-</kbd> with boxes selected</td><td>Cycle shape: triangle → rectangle → pentagon → hexagon</td></tr>
-      <tr><td><kbd>1</kbd>–<kbd>9</kbd> with boxes selected</td><td>Recolor: <kbd>1</kbd> default · <kbd>2</kbd> inverted · <kbd>3</kbd>–<kbd>9</kbd> red, orange, yellow, green, blue, purple, gray</td></tr>
-      <tr><td><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>9</kbd> with boxes selected</td><td>Font size: <kbd>1</kbd> default (14px) → <kbd>9</kbd> largest (56px)</td></tr>
-      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
-    </table>
-
-    <h3>Annotations</h3>
-    <table>
-      <tr><td><kbd>T</kbd></td><td>Spawn a text label at the cursor (auto-edits)</td></tr>
-      <tr><td><kbd>L</kbd></td><td>Spawn a horizontal line at the cursor</td></tr>
-      <tr><td><kbd>B</kbd> / <kbd>V</kbd></td><td>Enter brush mode (drag to paint freehand) / leave brush mode</td></tr>
-      <tr><td>Click a text / line</td><td>Select it</td></tr>
-      <tr><td>Double-click a text</td><td>Edit its label</td></tr>
-      <tr><td>Drag a text / line body</td><td>Move it (with any other selected items)</td></tr>
-      <tr><td>Drag a line endpoint dot (when selected)</td><td>Resize / re-aim the line</td></tr>
-      <tr><td>Hold <kbd>Shift</kbd> while dragging</td><td>Snap to the 20px background grid (boxes, texts, line bodies, line endpoints)</td></tr>
-      <tr><td><kbd>⌥</kbd>-drag any item</td><td>Duplicate selection (boxes, texts, lines, edges)</td></tr>
-      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove selected text / line</td></tr>
-    </table>
-
-    <h3>Connections</h3>
-    <table>
-      <tr><td>Drag a blue dot to another box</td><td>Create a connection between the two boxes</td></tr>
-      <tr><td>Drag a blue dot onto an existing connected handle</td><td>Re-route the existing connection</td></tr>
-      <tr><td>Drag a blue dot into empty space</td><td>Spawn a new box at the cursor and connect to it</td></tr>
-      <tr><td>Click an edge</td><td>Select it (turns blue + thicker)</td></tr>
-      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd> on edge</td><td>Remove the edge</td></tr>
-      <tr><td>(creating a new edge)</td><td>Replaces any prior edge between the same pair (undirected)</td></tr>
-    </table>
-
-    <h3>Selection</h3>
-    <table>
-      <tr><td>Drag on empty canvas</td><td>Rubber-band select all boxes intersecting the rectangle</td></tr>
-      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd></td><td>Select every box, text, and line on the current map</td></tr>
-      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy / cut / paste the current selection (each paste offsets +20px)</td></tr>
-      <tr><td><kbd>Shift</kbd>-drag on empty canvas</td><td>Add to the existing selection instead of replacing</td></tr>
-      <tr><td>Click on empty canvas</td><td>Clear the selection</td></tr>
-    </table>
-
-    <h3>Submaps</h3>
-    <table>
-      <tr><td><kbd>⌘</kbd>-click a box (macOS)</td><td>Enter that box's submap</td></tr>
-      <tr><td>Middle-click a box</td><td>Enter that box's submap</td></tr>
-      <tr><td><kbd>↑ Up</kbd> button</td><td>Navigate one level up</td></tr>
-      <tr><td>Click a breadcrumb segment</td><td>Jump to that level</td></tr>
-    </table>
-
-    <h3>History</h3>
-    <table>
-      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo (up to 100 steps; each save is one step)</td></tr>
-      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
-      <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo (alternate)</td></tr>
-    </table>
-
-    <h3>View</h3>
-    <table>
-      <tr><td>Right-click + drag</td><td>Pan the viewport</td></tr>
-      <tr><td>Resize the window</td><td>Auto-recenters the current map</td></tr>
-    </table>
-
-    <h3>Other</h3>
-    <table>
-      <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel link drag · clear selection · cancel a freshly spawned box</td></tr>
-      <tr><td><kbd>?</kbd> button (top right)</td><td>Open / close this help</td></tr>
-      <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
-    </table>
-  </div>
-</div>
-
-<svg id="edges">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
-    </marker>
-    <marker id="arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
-    </marker>
-  </defs>
-  <g id="edge-layer"></g>
-  <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
-</svg>
-<div id="version"></div>
-<a id="feedbackBtn" href="https://github.com/lassediercks/flowgo/issues/new" target="_blank" rel="noopener noreferrer">Give feedback</a>
-
-<script>
 let graph = { maps: [] };
 let currentPath = "/";
 let state = { boxes: [], edges: [] }; // alias for the current map
 let selected = new Set();
 let band = null; // rubber-band selection state
 let lastCursor = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-let lastCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-const viewport = { x: 0, y: 0 };
 let pan = null;
 
-function applyViewport() {
-  const tx = viewport.x, ty = viewport.y;
-  canvas.style.transform = `translate(${tx}px, ${ty}px)`;
-  document.getElementById("line-layer").setAttribute("transform", `translate(${tx} ${ty})`);
-  document.getElementById("stroke-layer").setAttribute("transform", `translate(${tx} ${ty})`);
-  document.getElementById("edge-layer").setAttribute("transform", `translate(${tx} ${ty})`);
-  ghostLine.setAttribute("transform", `translate(${tx} ${ty})`);
-  document.getElementById("bg-layer").style.backgroundPosition = `${tx}px ${ty}px`;
-}
-
-function toDataX(c) { return c - viewport.x; }
-function toDataY(c) { return c - viewport.y; }
-
-function recenter() {
-  const points = [];
-  for (const b of state.boxes) points.push([b.x, b.y]);
-  for (const t of state.texts) points.push([t.x, t.y]);
-  for (const l of state.lines) {
-    points.push([l.x1, l.y1]);
-    points.push([l.x2, l.y2]);
-  }
-  if (points.length === 0) {
-    viewport.x = 0; viewport.y = 0;
-  } else {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const [x, y] of points) {
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    viewport.x = window.innerWidth / 2 - cx;
-    viewport.y = window.innerHeight / 2 - cy;
-  }
-  applyViewport();
-}
+// Keep the no-arg recenter() shape that the rest of main.ts uses.
+const recenter = () => recenterPure(state);
 let savedSnapshot = null;
 let undoStack = [];
 let redoStack = [];
@@ -418,30 +70,31 @@ let link = null;       // link drag from a handle
 let editing = null;
 let dropTargetId = null;
 let nearTargetId = null; // box close enough to the cursor during a link drag
-let clipboard = null; // { boxes, texts, lines, edges, pasteOffset } captured by copy/cut
+
+// On macOS the platform reserves Ctrl+click for the secondary-click gesture
+// (= right-click), so we use Cmd as the "primary" modifier there. On every
+// other OS, Ctrl is the standard primary modifier. The helper picks the
+// correct event property without us having to remember in each callsite.
+const IS_MAC = (typeof navigator !== "undefined") &&
+  /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
+function primaryMod(e) { return IS_MAC ? e.metaKey : e.ctrlKey; }
 
 const canvas = document.getElementById("canvas");
 const svg = document.getElementById("edges");
 const edgeLayer = document.getElementById("edge-layer");
 const lineLayer = document.getElementById("line-layer");
 const strokeLayer = document.getElementById("stroke-layer");
-let brushMode = false;
-let activeStroke = null; // { id, points, polyEl } while painting
 const ghostLine = document.getElementById("ghost-line");
 
 const HANDLE_CODES = ["t","r","b","l","tl","tr","bl","br"];
 
 function uid(prefix) {
-  prefix = prefix || "b";
-  let n = 1;
-  const used = new Set([
-    ...state.boxes.map(b => b.id),
-    ...(state.texts || []).map(t => t.id),
-    ...(state.lines || []).map(l => l.id),
-    ...(state.strokes || []).map(s => s.id),
-  ]);
-  while (used.has(prefix + n)) n++;
-  return prefix + n;
+  return nextUid(prefix || "b", collectIds(
+    state.boxes,
+    state.texts || [],
+    state.lines || [],
+    state.strokes || [],
+  ));
 }
 
 function findTextById(id) { return state.texts.find(t => t.id === id); }
@@ -504,14 +157,15 @@ function ensureMap(path) {
   return m;
 }
 
-function setCurrentPath(p) {
+function setCurrentPath(p, opts) {
+  const keepViewport = opts && opts.keepViewport;
   currentPath = p;
   state = ensureMap(p);
   selected.clear();
   selectedEdge = null;
   renderAll();
   renderPath();
-  recenter();
+  if (!keepViewport) recenter();
   // Persist the current submap path in the URL hash so the location is
   // bookmarkable and the browser back/forward stack walks the navigation.
   const newHash = "#" + p;
@@ -604,66 +258,10 @@ async function saveBody(body) {
   setStatus("saved");
 }
 
-// Mirror of the Go serialize() in main.go so the browser can produce a
-// .flowgo file without involving the server.
-function flowgoQuote(s) {
-  if (!s || /[\s"\\]/.test(s)) {
-    return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
-  }
-  return s;
-}
-function flowgoNum(n) {
-  if (Number.isInteger(n)) return String(n);
-  return String(n);
-}
-function serializeGraph(g) {
-  const maps = (g.maps || []).filter(m =>
-    (m.boxes && m.boxes.length) ||
-    (m.edges && m.edges.length) ||
-    (m.texts && m.texts.length) ||
-    (m.lines && m.lines.length)
-  );
-  const multi = maps.length > 1;
-  let out = "";
-  maps.forEach((m, i) => {
-    if (i > 0) out += "\n";
-    if (multi || m.path !== "/") out += "map " + m.path + "\n";
-    for (const b of (m.boxes || [])) {
-      let line = "box " + b.id + " " + flowgoQuote(b.label || "") + " " + flowgoNum(b.x) + " " + flowgoNum(b.y);
-      const sidesTok = (b.sides === 3 || b.sides === 5 || b.sides === 6) ? b.sides : 0;
-      const paletteTok = (b.palette >= 2 && b.palette <= 9) ? b.palette : 0;
-      const fontTok = (b.font >= 2 && b.font <= 9) ? b.font : 0;
-      if (sidesTok || paletteTok || fontTok) line += " " + (sidesTok || 4);
-      if (paletteTok || fontTok) line += " " + (paletteTok || 1);
-      if (fontTok) line += " " + fontTok;
-      out += line + "\n";
-    }
-    if ((m.boxes || []).length && (m.edges || []).length) out += "\n";
-    for (const e of (m.edges || [])) {
-      const f = e.fromHandle ? (e.from + ":" + e.fromHandle) : e.from;
-      const t = e.toHandle   ? (e.to   + ":" + e.toHandle)   : e.to;
-      out += "edge " + f + " " + t + "\n";
-    }
-    const beforeTexts = (m.boxes || []).length || (m.edges || []).length;
-    if (beforeTexts && (m.texts || []).length) out += "\n";
-    for (const t of (m.texts || [])) {
-      out += "text " + t.id + " " + flowgoQuote(t.label || "") + " " + flowgoNum(t.x) + " " + flowgoNum(t.y) + "\n";
-    }
-    const beforeLines = beforeTexts || (m.texts || []).length;
-    if (beforeLines && (m.lines || []).length) out += "\n";
-    for (const l of (m.lines || [])) {
-      out += "line " + l.id + " " + flowgoNum(l.x1) + " " + flowgoNum(l.y1) + " " + flowgoNum(l.x2) + " " + flowgoNum(l.y2) + "\n";
-    }
-    const beforeStrokes = beforeLines || (m.lines || []).length;
-    if (beforeStrokes && (m.strokes || []).length) out += "\n";
-    for (const s of (m.strokes || [])) {
-      if (!s.points || s.points.length < 2) continue;
-      const pairs = s.points.map(p => flowgoNum(p[0]) + "," + flowgoNum(p[1])).join(" ");
-      out += "stroke " + s.id + " " + pairs + "\n";
-    }
-  });
-  return out;
-}
+// flowgoQuote / flowgoNum / serializeGraph are imported from
+// src/graph/serialize.ts. They are tested in isolation and round-trip
+// through the Go parser; treat the imports as the canonical surface.
+const serializeGraph = serializeGraphPure;
 
 function downloadFlowgo() {
   const text = serializeGraph(graph);
@@ -716,7 +314,11 @@ function applyGraphSnapshot(body) {
   selected.clear();
   selectedEdge = null;
   const target = graph.maps.some(m => m.path === currentPath) ? currentPath : "/";
-  setCurrentPath(target);
+  // Undo/redo of an in-place edit shouldn't recentre — the user's pan
+  // is part of the view state, not the graph state. Only fall back to
+  // recentre when we actually had to switch maps (e.g. the current
+  // submap got removed by the snapshot we're stepping into).
+  setCurrentPath(target, { keepViewport: target === currentPath });
 }
 
 function undo() {
@@ -748,43 +350,10 @@ function redo() {
   setStatus("redo");
 }
 
-function boxHasSubmapContent(boxId) {
-  const subPath = currentPath === "/" ? "/" + boxId : currentPath + "/" + boxId;
-  for (const m of (graph.maps || [])) {
-    if (m.path !== subPath && !m.path.startsWith(subPath + "/")) continue;
-    if ((m.boxes && m.boxes.length) || (m.edges && m.edges.length) ||
-        (m.texts && m.texts.length) || (m.lines && m.lines.length)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function boxSides(b) {
-  const n = b.sides | 0;
-  if (n === 3 || n === 5 || n === 6) return n;
-  return 4;
-}
-
-// Vertices in a 0..100 unit-box space, used by both SVG rendering and edge anchoring.
-function polygonVerticesFor(sides) {
-  if (sides === 3) {
-    // Isoceles triangle, apex up, fills the bounding box.
-    return [[50, 0], [100, 100], [0, 100]];
-  }
-  const verts = [];
-  for (let i = 0; i < sides; i++) {
-    const a = -Math.PI / 2 + (2 * Math.PI * i) / sides;
-    verts.push([50 + 50 * Math.cos(a), 50 + 50 * Math.sin(a)]);
-  }
-  return verts;
-}
-
-function polygonPointsForSides(sides) {
-  return polygonVerticesFor(sides)
-    .map(([x, y]) => x.toFixed(2) + "," + y.toFixed(2))
-    .join(" ");
-}
+// Thin closure over the live graph + current path so the call sites
+// keep their `boxHasSubmapContent(boxId)` shape.
+const boxHasSubmapContent = (boxId) =>
+  hasSubmapContent(graph, currentPath, boxId);
 
 function renderAll() {
   canvas.innerHTML = "";
@@ -828,7 +397,11 @@ function renderAll() {
   }
   for (const t of state.texts) {
     const el = document.createElement("div");
-    el.className = "text-item";
+    const tPalette = (t.palette >= 2 && t.palette <= 9) ? t.palette : 1;
+    const tFont = (t.font >= 2 && t.font <= 9) ? t.font : 1;
+    el.className = "text-item"
+      + (tPalette !== 1 ? " palette-" + tPalette : "")
+      + (tFont !== 1 ? " font-" + tFont : "");
     el.dataset.id = t.id;
     el.style.left = t.x + "px";
     el.style.top = t.y + "px";
@@ -844,70 +417,6 @@ function renderAll() {
 
 function strokePointsAttr(points) {
   return points.map(p => p[0] + "," + p[1]).join(" ");
-}
-
-// Ramer-Douglas-Peucker: drop points that lie within `eps` of the line
-// between their neighbours. Cheap, non-destructive smoothing that just
-// removes redundant samples — the rendered curve stays close to the
-// original path but the file gets a lot shorter.
-function simplifyStroke(points, eps) {
-  if (points.length < 3) return points.slice();
-  const eps2 = eps * eps;
-  const keep = new Array(points.length).fill(false);
-  keep[0] = true;
-  keep[points.length - 1] = true;
-  const stack = [[0, points.length - 1]];
-  while (stack.length) {
-    const [lo, hi] = stack.pop();
-    if (hi - lo < 2) continue;
-    const [ax, ay] = points[lo];
-    const [bx, by] = points[hi];
-    const dx = bx - ax, dy = by - ay;
-    const len2 = dx * dx + dy * dy;
-    let maxD2 = 0, idx = -1;
-    for (let i = lo + 1; i < hi; i++) {
-      const [px, py] = points[i];
-      let d2;
-      if (len2 === 0) {
-        const ex = px - ax, ey = py - ay;
-        d2 = ex * ex + ey * ey;
-      } else {
-        const t = ((px - ax) * dx + (py - ay) * dy) / len2;
-        const cx = ax + t * dx, cy = ay + t * dy;
-        const ex = px - cx, ey = py - cy;
-        d2 = ex * ex + ey * ey;
-      }
-      if (d2 > maxD2) { maxD2 = d2; idx = i; }
-    }
-    if (idx >= 0 && maxD2 > eps2) {
-      keep[idx] = true;
-      stack.push([lo, idx]);
-      stack.push([idx, hi]);
-    }
-  }
-  return points.filter((_, i) => keep[i]);
-}
-
-// Build an SVG path that draws a smooth curve through `points`: each
-// raw point becomes a quadratic-Bezier control point and the curve
-// ends at the midpoint between neighbours, so corners get rounded
-// off without straying far from the underlying samples.
-function strokePathD(points) {
-  if (points.length < 2) return "";
-  const f = n => Math.round(n * 100) / 100;
-  if (points.length === 2) {
-    return `M${f(points[0][0])},${f(points[0][1])} L${f(points[1][0])},${f(points[1][1])}`;
-  }
-  let d = `M${f(points[0][0])},${f(points[0][1])}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const [x1, y1] = points[i];
-    const [x2, y2] = points[i + 1];
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    d += ` Q${f(x1)},${f(y1)} ${f(mx)},${f(my)}`;
-  }
-  const last = points[points.length - 1];
-  d += ` L${f(last[0])},${f(last[1])}`;
-  return d;
 }
 
 function renderStrokes() {
@@ -935,7 +444,7 @@ function renderStrokes() {
     g.appendChild(line);
 
     g.addEventListener("mousedown", (ev) => {
-      if (brushMode) return;
+      if (isBrushMode()) return;
       ev.stopPropagation();
       if (!ev.shiftKey) selected.clear();
       selected.add(s.id);
@@ -1080,80 +589,42 @@ function renderEdges() {
 
 // Handle dots still render with a CSS offset (-20px) so they're easy to grab,
 // but edge endpoints anchor to the box's actual border so the line visually
-// attaches to the box, not to the floating dot.
-const HANDLE_OFFSET = 0;
+// All edge-anchor math now lives in src/graph/handle.ts and
+// src/graph/polygon.ts. The wrappers below pull live element
+// dimensions, package them into a Box2D, and delegate to the pure
+// helpers — preserving the existing call signatures so render and
+// interaction code keeps working unchanged.
+
+const boxFor = (el, b) => ({
+  x: b.x,
+  y: b.y,
+  width: el.offsetWidth,
+  height: el.offsetHeight,
+});
 
 function handleAnchor(el, b, code) {
-  const w = el.offsetWidth, h = el.offsetHeight;
-  const cx = b.x + w / 2, cy = b.y + h / 2;
-  const o = HANDLE_OFFSET;
-  switch (code) {
-    case "t":  return [cx,         b.y - o];
-    case "b":  return [cx,         b.y + h + o];
-    case "l":  return [b.x - o,    cy];
-    case "r":  return [b.x + w + o, cy];
-    case "tl": return [b.x - o,    b.y - o];
-    case "tr": return [b.x + w + o, b.y - o];
-    case "bl": return [b.x - o,    b.y + h + o];
-    case "br": return [b.x + w + o, b.y + h + o];
-  }
-  return [cx, cy];
+  return handleAnchorPure(boxFor(el, b), code);
 }
 
 function nearestHandle(b, el, fx, fy) {
-  let best = "r", bestD = Infinity;
-  for (const c of HANDLE_CODES) {
-    const [hx, hy] = handleAnchor(el, b, c);
-    const d = Math.hypot(hx - fx, hy - fy);
-    if (d < bestD) { bestD = d; best = c; }
-  }
-  return best;
+  return nearestHandlePure(boxFor(el, b), [fx, fy]);
 }
 
 function polygonAnchor(b, el, towardX, towardY) {
-  const w = el.offsetWidth, h = el.offsetHeight;
-  const cx = b.x + w / 2, cy = b.y + h / 2;
-  const sides = boxSides(b);
-  const dx = towardX - cx, dy = towardY - cy;
-  if (dx === 0 && dy === 0) return [cx, cy];
-  // Map unit-box vertices into screen coordinates.
-  const verts = polygonVerticesFor(sides).map(([ux, uy]) =>
-    [b.x + (ux / 100) * w, b.y + (uy / 100) * h]);
-  // Ray P(t) = (cx,cy) + t*(dx,dy), t > 0. For each edge V[i]->V[i+1],
-  // solve for the intersection and pick the smallest valid t.
-  let bestT = Infinity, hit = null;
-  for (let i = 0; i < sides; i++) {
-    const [x1, y1] = verts[i];
-    const [x2, y2] = verts[(i + 1) % sides];
-    const sx = x2 - x1, sy = y2 - y1;
-    const denom = dx * sy - dy * sx;
-    if (Math.abs(denom) < 1e-9) continue; // parallel
-    const t = ((x1 - cx) * sy - (y1 - cy) * sx) / denom;
-    const u = ((x1 - cx) * dy - (y1 - cy) * dx) / denom;
-    if (t > 0 && u >= 0 && u <= 1 && t < bestT) {
-      bestT = t;
-      hit = [cx + dx * t, cy + dy * t];
-    }
-  }
-  return hit || [cx, cy];
+  const box = boxFor(el, b);
+  const hit = polygonAnchorPure(box, boxSides(b), [towardX, towardY]);
+  return hit || [box.x + box.width / 2, box.y + box.height / 2];
 }
 
 function endpointAnchor(b, el, code, towardX, towardY) {
   if (boxSides(b) !== 4) return polygonAnchor(b, el, towardX, towardY);
-  if (!code) code = nearestHandle(b, el, towardX, towardY);
-  return handleAnchor(el, b, code);
+  return rectAnchor(boxFor(el, b), code, [towardX, towardY]);
 }
 
+// Mutate the live state.edges in-place so existing call sites keep
+// working; the actual replacement logic is the pure helper.
 function addOrReplaceEdge(newEdge) {
-  // Edges are undirected: a new edge between A and B removes any prior edge
-  // between the same pair, in either direction.
-  state.edges = state.edges.filter(e => {
-    const samePair =
-      (e.from === newEdge.from && e.to === newEdge.to) ||
-      (e.from === newEdge.to   && e.to === newEdge.from);
-    return !samePair;
-  });
-  state.edges.push(newEdge);
+  state.edges = addOrReplaceEdgePure(state.edges, newEdge);
 }
 
 // Clone all currently-selected items, replace selection with the clones,
@@ -1181,7 +652,10 @@ function cloneSelection() {
     if (t) {
       const newId = uid("t");
       idMap.set(id, newId);
-      state.texts.push({ id: newId, label: t.label, x: t.x, y: t.y });
+      const tCopy = { id: newId, label: t.label, x: t.x, y: t.y };
+      if (t.palette) tCopy.palette = t.palette;
+      if (t.font) tCopy.font = t.font;
+      state.texts.push(tCopy);
       continue;
     }
     const l = findLineById(id);
@@ -1436,7 +910,7 @@ function startTextEdit(el, t) {
 function attachBoxHandlers(el, b) {
   el.addEventListener("mousedown", (e) => {
     if (el.isContentEditable) return;
-    if (e.button === 1 || (e.button === 0 && e.metaKey)) {
+    if (e.button === 1 || (e.button === 0 && primaryMod(e))) {
       e.preventDefault();
       e.stopPropagation();
       enterSubmap(b.id);
@@ -1556,7 +1030,7 @@ function attachBoxHandlers(el, b) {
 document.addEventListener("mousemove", (e) => {
   lastCursor.x = e.clientX;
   lastCursor.y = e.clientY;
-  if (activeStroke) { extendStroke(e); return; }
+  if (isPainting()) { extendStroke(e); return; }
   if (pan) {
     viewport.x = pan.startVX + (e.clientX - pan.downX);
     viewport.y = pan.startVY + (e.clientY - pan.downY);
@@ -1605,7 +1079,7 @@ document.addEventListener("mousemove", (e) => {
 });
 
 document.addEventListener("mouseup", (e) => {
-  if (activeStroke) { finishStroke(); return; }
+  if (isPainting()) { finishStroke(); return; }
   if (pan) {
     pan = null;
     document.body.classList.remove("panning");
@@ -1734,9 +1208,18 @@ function findBoxAt(x, y) {
 
 function startEdit(el, b, opts) {
   if (editing) return;
-  editing = el;
   const cancelDeletes = opts && opts.cancelDeletes;
   const labelEl = el.querySelector(".box-label");
+  if (!labelEl) {
+    // Defensive: if the label span is missing for any reason, rebuild
+    // the box from state and retry. Beats wedging `editing` to a stale
+    // element and locking out every keyboard shortcut.
+    renderAll();
+    const fresh = canvas.querySelector(`.box[data-id="${b.id}"]`);
+    if (fresh) startEdit(fresh, b, opts);
+    return;
+  }
+  editing = el;
   el.contentEditable = "true";
   labelEl.textContent = b.label;
   el.focus();
@@ -1751,7 +1234,15 @@ function startEdit(el, b, opts) {
     el.removeEventListener("keydown", onKey);
     el.contentEditable = "false";
     editing = null;
-    const newLabel = labelEl.textContent.replace(/\s+/g, " ").trim();
+    // Read from el, not labelEl: contenteditable can land pasted text in
+    // sibling text nodes / divs directly under el (outside the span). The
+    // SVG polygon and handle divs contribute no text content, so el.textContent
+    // is just the label across whichever children the browser used.
+    let newLabel = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (newLabel.length > MAX_LABEL_LEN) {
+      newLabel = newLabel.slice(0, MAX_LABEL_LEN);
+      setStatus("label truncated to " + MAX_LABEL_LEN + " characters");
+    }
     if (!commit && cancelDeletes) {
       // Roll back: drop the just-spawned box and any of its edges.
       state.boxes = state.boxes.filter(x => x.id !== b.id);
@@ -1770,8 +1261,12 @@ function startEdit(el, b, opts) {
       b.label = newLabel;
       scheduleSave();
     }
-    labelEl.textContent = b.label;
-    renderEdges();
+    // Rebuild the affected box from state. Trying to surgically pluck
+    // out only the stray nodes the contenteditable inserted is brittle
+    // (the browser sometimes wraps the label span in a div, and a
+    // direct-child sweep then deletes the wrapper *and* the span). A
+    // full renderAll is heavier but guarantees the DOM matches state.
+    renderAll();
   };
   const onBlur = () => finish(true);
   const onKey = (e) => {
@@ -1843,84 +1338,19 @@ document.getElementById("bg-layer").addEventListener("dblclick", (e) => {
   createBoxAt(dx, dy, { x: dx, y: dy });
 });
 
-function copySelection() {
-  if (selected.size === 0) return false;
-  const boxes = [], texts = [], lines = [], edges = [];
-  const boxIds = new Set();
-  for (const id of selected) {
-    const b = state.boxes.find(x => x.id === id);
-    if (b) {
-      const copy = { id: b.id, label: b.label, x: b.x, y: b.y };
-      if (b.sides) copy.sides = b.sides;
-      if (b.palette) copy.palette = b.palette;
-      if (b.font) copy.font = b.font;
-      boxes.push(copy);
-      boxIds.add(b.id);
-      continue;
-    }
-    const t = findTextById(id);
-    if (t) { texts.push({ id: t.id, label: t.label, x: t.x, y: t.y }); continue; }
-    const l = findLineById(id);
-    if (l) { lines.push({ id: l.id, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 }); }
-  }
-  for (const e of state.edges) {
-    if (boxIds.has(e.from) && boxIds.has(e.to)) {
-      edges.push({ from: e.from, fromHandle: e.fromHandle || "", to: e.to, toHandle: e.toHandle || "" });
-    }
-  }
-  if (!boxes.length && !texts.length && !lines.length) return false;
-  clipboard = { boxes, texts, lines, edges, pasteOffset: 0 };
-  return true;
-}
-
-function cutSelection() {
-  if (!copySelection()) { setStatus("nothing to cut"); return; }
-  const n = selected.size;
-  deleteSelection();
-  setStatus("cut " + n + " items");
-}
-
-function pasteSelection() {
-  if (!clipboard) { setStatus("clipboard is empty"); return; }
-  clipboard.pasteOffset += 20;
-  const dx = clipboard.pasteOffset, dy = clipboard.pasteOffset;
-  const idMap = new Map();
-  selected.clear();
-  selectedEdge = null;
-  for (const b of clipboard.boxes) {
-    const newId = uid("b");
-    idMap.set(b.id, newId);
-    const copy = { id: newId, label: b.label, x: b.x + dx, y: b.y + dy };
-    if (b.sides) copy.sides = b.sides;
-    state.boxes.push(copy);
-    selected.add(newId);
-  }
-  for (const t of clipboard.texts) {
-    const newId = uid("t");
-    idMap.set(t.id, newId);
-    state.texts.push({ id: newId, label: t.label, x: t.x + dx, y: t.y + dy });
-    selected.add(newId);
-  }
-  for (const l of clipboard.lines) {
-    const newId = uid("l");
-    idMap.set(l.id, newId);
-    state.lines.push({
-      id: newId,
-      x1: l.x1 + dx, y1: l.y1 + dy,
-      x2: l.x2 + dx, y2: l.y2 + dy,
-    });
-    selected.add(newId);
-  }
-  for (const ed of clipboard.edges) {
-    const from = idMap.get(ed.from);
-    const to = idMap.get(ed.to);
-    if (!from || !to) continue;
-    state.edges.push({ from, fromHandle: ed.fromHandle, to, toHandle: ed.toHandle });
-  }
-  scheduleSave();
-  renderAll();
-  setStatus("pasted " + selected.size + " items");
-}
+// Copy / cut / paste live in ./clipboard.ts. Wired below.
+wireClipboard({
+  selected,
+  currentMap: () => state,
+  findTextById,
+  findLineById,
+  mintId: uid,
+  scheduleSave: () => scheduleSave(),
+  renderAll: () => renderAll(),
+  deleteSelection: () => deleteSelection(),
+  setStatus: (s) => setStatus(s),
+  clearSelectedEdge: () => { selectedEdge = null; },
+});
 
 function deleteSelection() {
   if (selected.size === 0) { setStatus("nothing selected"); return; }
@@ -1947,13 +1377,7 @@ document.getElementById("upBtn").addEventListener("click", goUp);
 document.getElementById("downloadBtn").addEventListener("click", downloadFlowgo);
 document.getElementById("reshareBtn").addEventListener("click", reshare);
 
-const helpOverlay = document.getElementById("helpOverlay");
-function setHelpOpen(open) { helpOverlay.classList.toggle("hidden", !open); }
-document.getElementById("helpBtn").addEventListener("click", () => setHelpOpen(true));
-document.getElementById("helpClose").addEventListener("click", () => setHelpOpen(false));
-helpOverlay.addEventListener("mousedown", (e) => {
-  if (e.target === helpOverlay) setHelpOpen(false);
-});
+attachHelpListeners();
 
 // Suppress middle-click autoscroll/paste so we can use it for navigation.
 window.addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
@@ -1972,7 +1396,7 @@ document.addEventListener("mousedown", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !helpOverlay.classList.contains("hidden")) {
+  if (e.key === "Escape" && isHelpOpen()) {
     setHelpOpen(false);
     return;
   }
@@ -2042,12 +1466,12 @@ document.addEventListener("keydown", (e) => {
     const palette = parseInt(e.key, 10);
     let changed = false;
     for (const id of selected) {
-      const bx = state.boxes.find(x => x.id === id);
-      if (!bx) continue;
+      const target = state.boxes.find(x => x.id === id) || findTextById(id);
+      if (!target) continue;
       if (palette === 1) {
-        if (bx.palette) { delete bx.palette; changed = true; }
-      } else if (bx.palette !== palette) {
-        bx.palette = palette;
+        if (target.palette) { delete target.palette; changed = true; }
+      } else if (target.palette !== palette) {
+        target.palette = palette;
         changed = true;
       }
     }
@@ -2063,12 +1487,12 @@ document.addEventListener("keydown", (e) => {
     const font = parseInt(e.code.slice(5), 10);
     let changed = false;
     for (const id of selected) {
-      const bx = state.boxes.find(x => x.id === id);
-      if (!bx) continue;
+      const target = state.boxes.find(x => x.id === id) || findTextById(id);
+      if (!target) continue;
       if (font === 1) {
-        if (bx.font) { delete bx.font; changed = true; }
-      } else if (bx.font !== font) {
-        bx.font = font;
+        if (target.font) { delete target.font; changed = true; }
+      } else if (target.font !== font) {
+        target.font = font;
         changed = true;
       }
     }
@@ -2115,7 +1539,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
-    if (brushMode) { setBrushMode(false); return; }
+    if (isBrushMode()) { setBrushMode(false); return; }
     if (link) { link.handleEl.classList.remove("active"); ghostLine.style.display = "none"; link = null; dropTargetId = null; applyClasses(); clearProximity(); }
     selected.clear();
     selectedEdge = null;
@@ -2142,7 +1566,7 @@ document.addEventListener("keydown", (e) => {
 
 document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  if (brushMode) { startStroke(e); return; }
+  if (isBrushMode()) { startStroke(e); return; }
   if (!e.shiftKey) selected.clear();
   if (selectedEdge) { selectedEdge = null; renderEdges(); }
   applyClasses();
@@ -2156,60 +1580,17 @@ document.getElementById("bg-layer").addEventListener("mousedown", (e) => {
   band = { startX: e.clientX, startY: e.clientY, el: bandEl };
 });
 
-function setBrushMode(on) {
-  if (brushMode === on) return;
-  brushMode = on;
-  document.body.classList.toggle("brush-mode", brushMode);
-  setStatus(brushMode ? "brush mode — drag to paint, V to exit" : "select mode");
-}
-
-function roundCoord(n) { return Math.round(n * 100) / 100; }
-
-function startStroke(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  const x = roundCoord(toDataX(e.clientX));
-  const y = roundCoord(toDataY(e.clientY));
-  const id = uid("s");
-  const ns = "http://www.w3.org/2000/svg";
-  const g = document.createElementNS(ns, "g");
-  g.setAttribute("class", "stroke-group");
-  g.dataset.id = id;
-  const poly = document.createElementNS(ns, "polyline");
-  poly.setAttribute("class", "stroke-line");
-  poly.setAttribute("points", x + "," + y);
-  g.appendChild(poly);
-  strokeLayer.appendChild(g);
-  activeStroke = { id, points: [[x, y]], polyEl: poly };
-}
-
-function extendStroke(e) {
-  if (!activeStroke) return;
-  const x = roundCoord(toDataX(e.clientX));
-  const y = roundCoord(toDataY(e.clientY));
-  const last = activeStroke.points[activeStroke.points.length - 1];
-  // Skip points that are too close to keep storage compact.
-  if (Math.hypot(x - last[0], y - last[1]) < 2) return;
-  activeStroke.points.push([x, y]);
-  activeStroke.polyEl.setAttribute("points", strokePointsAttr(activeStroke.points));
-}
-
-function finishStroke() {
-  if (!activeStroke) return;
-  // ε ≈ 1.5px — enough to drop hand-tremor samples without rounding off
-  // intentional curves. Tune up if file size still feels heavy.
-  const simplified = simplifyStroke(activeStroke.points, 1.5);
-  if (simplified.length >= 2) {
-    state.strokes ||= [];
-    state.strokes.push({ id: activeStroke.id, points: simplified });
-    scheduleSave();
-  } else {
-    const g = activeStroke.polyEl.parentNode;
-    if (g && g.parentNode) g.parentNode.removeChild(g);
-  }
-  activeStroke = null;
-  renderStrokes();
-}
+// Brush mode (paint freehand strokes) lives in ./brush.ts. This call
+// supplies the bindings it can't import from main.ts directly because
+// they reference live mutable state held here.
+wireBrush({
+  mintId: () => uid("s"),
+  strokeLayer: () => strokeLayer,
+  currentMap: () => state,
+  scheduleSave: () => scheduleSave(),
+  afterCommit: () => renderStrokes(),
+  setStatus: (s) => setStatus(s),
+});
 
 // On window resize, recenter the map under the new viewport size — viewport-only,
 // no data mutation, so the file isn't dirtied.
@@ -2225,6 +1606,3 @@ fetch("/version")
     if (v) document.getElementById("version").textContent = "flowgo " + v;
   })
   .catch(() => {});
-</script>
-</body>
-</html>

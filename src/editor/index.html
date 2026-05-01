@@ -1,0 +1,385 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>flowgo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 14px system-ui, sans-serif; }
+  #toolbar {
+    position: fixed; top: 8px; left: 8px; z-index: 10;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  #toolbar button { margin-right: 6px; }
+  #version {
+    position: fixed; bottom: 6px; left: 8px;
+    color: #999; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    pointer-events: none;
+  }
+  #feedbackBtn {
+    position: fixed; bottom: 8px; right: 8px; z-index: 11;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; color: #444;
+    text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  #feedbackBtn:hover { background: #f0f0f0; color: #222; }
+  #path { margin-left: 12px; color: #444; font-family: ui-monospace, monospace; font-size: 12px; }
+  #path .seg { cursor: pointer; }
+  #path .seg:hover { text-decoration: underline; }
+  #path .sep { color: #aaa; }
+  #bg-layer {
+    position: absolute; inset: 0; z-index: 0;
+    background-color: #fafafa;
+    background-image:
+      linear-gradient(to right,  rgba(0,0,0,.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.05) 1px, transparent 1px),
+      linear-gradient(to right,  rgba(0,0,0,.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,.10) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+  }
+  #bg-svg {
+    position: absolute; inset: 0; z-index: 1;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  #canvas {
+    position: absolute; inset: 0; z-index: 2;
+    background: transparent;
+    pointer-events: none;
+  }
+  #canvas .box, #canvas .text-item { pointer-events: auto; }
+  .box {
+    position: absolute; min-width: 80px; padding: 0.55em 0.85em;
+    background: #fff; border: 2px solid #333; border-radius: 6px;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,.1);
+    cursor: grab;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
+  .box.has-submap { box-shadow: 4px 4px 0 0 #222; }
+  .box.has-submap.dragging { box-shadow: 6px 6px 0 0 #222, 0 4px 10px rgba(0,0,0,.2); }
+  .box.shaped.has-submap { box-shadow: none; }
+  .box.shaped.has-submap > .shape-svg { filter: drop-shadow(4px 4px 0 #222); }
+  .box.selected { border-color: #07f; }
+  .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
+  .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
+
+  .box.shaped {
+    background: transparent; border: 0; border-radius: 0;
+    padding: 1.2em 1.6em; box-shadow: none;
+    isolation: isolate;
+    box-sizing: border-box;
+    aspect-ratio: 1 / 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .box.shaped.sides-3 {
+    padding: 1.2em 1.2em 0.8em;
+    align-items: flex-end;
+  }
+  .box.shaped.dragging { box-shadow: none; }
+  .box.shaped > .shape-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible; z-index: -1;
+  }
+  .box.shaped .shape-poly { fill: #fff; stroke: #333; stroke-width: 2; }
+  .box.shaped.selected .shape-poly { stroke: #07f; }
+  .box.shaped.drop-target .shape-poly { stroke: #2a7; stroke-width: 4; }
+  .box.shaped[contenteditable="true"] .shape-poly { fill: #ffffe0; }
+
+  /* Palette: 1 = default (white/black). 2 = inverted. 3-9 = standard hues. */
+  .box.palette-2 { background: #111; border-color: #fff; color: #fff; }
+  .box.palette-3 { background: #fecaca; border-color: #b91c1c; color: #7f1d1d; }
+  .box.palette-4 { background: #fed7aa; border-color: #c2410c; color: #7c2d12; }
+  .box.palette-5 { background: #fef9c3; border-color: #a16207; color: #713f12; }
+  .box.palette-6 { background: #bbf7d0; border-color: #15803d; color: #14532d; }
+  .box.palette-7 { background: #bfdbfe; border-color: #1d4ed8; color: #1e3a8a; }
+  .box.palette-8 { background: #ddd6fe; border-color: #6d28d9; color: #4c1d95; }
+  .box.palette-9 { background: #e5e7eb; border-color: #374151; color: #111827; }
+  .box.shaped.palette-2 .shape-poly { fill: #111; stroke: #fff; }
+  .box.shaped.palette-3 .shape-poly { fill: #fecaca; stroke: #b91c1c; }
+  .box.shaped.palette-4 .shape-poly { fill: #fed7aa; stroke: #c2410c; }
+  .box.shaped.palette-5 .shape-poly { fill: #fef9c3; stroke: #a16207; }
+  .box.shaped.palette-6 .shape-poly { fill: #bbf7d0; stroke: #15803d; }
+  .box.shaped.palette-7 .shape-poly { fill: #bfdbfe; stroke: #1d4ed8; }
+  .box.shaped.palette-8 .shape-poly { fill: #ddd6fe; stroke: #6d28d9; }
+  .box.shaped.palette-9 .shape-poly { fill: #e5e7eb; stroke: #374151; }
+  .box.shaped[class*="palette-"] { background: transparent; }
+
+  /* Font-size scale: 1 = default (14px). 2-9 step monotonically larger. */
+  .box.font-2 { font-size: 16px; }
+  .box.font-3 { font-size: 18px; }
+  .box.font-4 { font-size: 20px; }
+  .box.font-5 { font-size: 24px; }
+  .box.font-6 { font-size: 28px; }
+  .box.font-7 { font-size: 34px; }
+  .box.font-8 { font-size: 42px; }
+  .box.font-9 { font-size: 56px; }
+
+  .text-item {
+    position: absolute; padding: 4px 6px;
+    background: transparent; border: 1px dashed transparent;
+    user-select: none; cursor: grab;
+    font-size: 14px; color: #222;
+    line-height: 1.3;
+    border-radius: 4px;
+  }
+  .text-item.dragging { cursor: grabbing; }
+  .text-item.selected { border-color: #07f; background: rgba(0,119,255,.05); }
+  .text-item[contenteditable="true"] {
+    cursor: text; user-select: text; outline: none;
+    background: #ffffe0; border-color: #aaa;
+  }
+
+  /* Text-item palette: maps the matching box border-hue onto the text
+     colour itself. Palette 2 (white-on-black for boxes) becomes bold
+     black for text since white is invisible on the canvas. */
+  .text-item.palette-2 { color: #111; font-weight: 600; }
+  .text-item.palette-3 { color: #b91c1c; }
+  .text-item.palette-4 { color: #c2410c; }
+  .text-item.palette-5 { color: #a16207; }
+  .text-item.palette-6 { color: #15803d; }
+  .text-item.palette-7 { color: #1d4ed8; }
+  .text-item.palette-8 { color: #6d28d9; }
+  .text-item.palette-9 { color: #374151; }
+
+  /* Text-item font scale mirrors the box scale (Shift+1..9). */
+  .text-item.font-2 { font-size: 16px; }
+  .text-item.font-3 { font-size: 18px; }
+  .text-item.font-4 { font-size: 20px; }
+  .text-item.font-5 { font-size: 24px; }
+  .text-item.font-6 { font-size: 28px; }
+  .text-item.font-7 { font-size: 34px; }
+  .text-item.font-8 { font-size: 42px; }
+  .text-item.font-9 { font-size: 56px; }
+
+  .stroke-group .stroke-hit { pointer-events: stroke; cursor: pointer; }
+  .stroke-line { fill: none; stroke: #333; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .stroke-group.selected .stroke-line { stroke: #07f; }
+
+  body.brush-mode,
+  body.brush-mode #bg-layer,
+  body.brush-mode #canvas,
+  body.brush-mode .box,
+  body.brush-mode .text-item {
+    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M3 21l3-1 9-9-2-2-9 9-1 3z' fill='%23333' stroke='%23000' stroke-width='1'/><path d='M14 9l4-4-2-2-4 4z' fill='%23a60' stroke='%23000' stroke-width='1'/></svg>") 2 22, crosshair;
+  }
+  body.brush-mode .handle { display: none; }
+  body.brush-mode #canvas .box,
+  body.brush-mode #canvas .text-item,
+  body.brush-mode .line-group,
+  body.brush-mode .stroke-group,
+  body.brush-mode .edge-group { pointer-events: none; }
+
+  .line-group .line-hit { pointer-events: stroke; cursor: grab; }
+  .line-group.dragging .line-hit { cursor: grabbing; }
+  .line-line { stroke: #555; stroke-width: 2; }
+  .line-group.selected .line-line { stroke: #07f; stroke-width: 3; }
+  .line-handle {
+    fill: #07f; stroke: #fff; stroke-width: 2;
+    pointer-events: all; cursor: crosshair;
+    display: none;
+  }
+  .line-group.selected .line-handle { display: inline; }
+  .line-handle:hover { fill: #2a7; }
+
+  .handle {
+    position: absolute; width: 12px; height: 12px;
+    background: #07f; border: 2px solid #fff; border-radius: 50%;
+    box-sizing: border-box; cursor: crosshair; z-index: 5;
+    opacity: 0; transition: opacity .12s;
+  }
+  .box:hover .handle, .handle.active, .box.proximity-target .handle { opacity: 1; }
+  .box[contenteditable="true"] .handle { display: none; }
+
+  .h-t  { top: -20px;    left: 50%;     transform: translateX(-50%); }
+  .h-r  { top: 50%;      right: -20px;  transform: translateY(-50%); }
+  .h-b  { bottom: -20px; left: 50%;     transform: translateX(-50%); }
+  .h-l  { top: 50%;      left: -20px;   transform: translateY(-50%); }
+  .h-tl { top: -20px;    left: -20px; }
+  .h-tr { top: -20px;    right: -20px; }
+  .h-bl { bottom: -20px; left: -20px; }
+  .h-br { bottom: -20px; right: -20px; }
+
+  svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 1; }
+  .edge-group { pointer-events: none; }
+  .edge-hit { pointer-events: stroke; cursor: pointer; }
+  .edge-line { stroke: #333; stroke-width: 2; }
+  .edge-group.selected .edge-line { stroke: #07f; stroke-width: 3; }
+  .selection-band {
+    position: fixed; z-index: 6; pointer-events: none;
+    border: 1px dashed #07f; background: rgba(0,119,255,.08);
+  }
+  body.panning, body.panning * { cursor: grabbing !important; }
+
+  #helpBtn {
+    position: fixed; top: 8px; right: 8px; z-index: 11;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #fff; border: 1px solid #ccc;
+    font-size: 16px; font-weight: bold; color: #555;
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    line-height: 1;
+  }
+  #helpBtn:hover { background: #f0f0f0; }
+
+  #helpOverlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #helpOverlay.hidden { display: none; }
+  #helpModal {
+    background: #fff; border-radius: 10px; padding: 24px 28px;
+    max-width: 720px; width: 90%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+    position: relative;
+  }
+  #helpModal h2 { margin: 0 0 4px 0; font-size: 18px; }
+  #helpModal .sub { color: #777; font-size: 12px; margin-bottom: 14px; }
+  #helpModal h3 {
+    margin: 18px 0 6px 0; color: #555; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .8px;
+  }
+  #helpModal table { border-collapse: collapse; width: 100%; }
+  #helpModal td { padding: 5px 10px 5px 0; vertical-align: top; font-size: 13px; }
+  #helpModal td:first-child { white-space: nowrap; color: #333; width: 1%; }
+  #helpModal td:last-child { color: #555; }
+  #helpModal kbd {
+    display: inline-block; padding: 1px 6px;
+    border: 1px solid #ccc; border-bottom-width: 2px;
+    border-radius: 4px; background: #f7f7f7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    color: #333;
+  }
+  #helpClose {
+    position: absolute; top: 8px; right: 12px;
+    background: transparent; border: 0; font-size: 24px;
+    cursor: pointer; color: #888; line-height: 1; padding: 0;
+  }
+  #helpClose:hover { color: #333; }
+  .help { color: #666; font-size: 12px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="upBtn">↑ Up</button>
+  <button id="downloadBtn" style="display:none">Download .flowgo</button>
+  <button id="reshareBtn"  style="display:none">Save as new share</button>
+  <span id="path"></span>
+</div>
+<div id="bg-layer"></div>
+<svg id="bg-svg">
+  <g id="stroke-layer"></g>
+  <g id="line-layer"></g>
+</svg>
+<div id="canvas"></div>
+<button id="helpBtn" title="Help (keybinds)" aria-label="Help">?</button>
+
+<div id="helpOverlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div id="helpModal">
+    <button id="helpClose" aria-label="Close help">×</button>
+    <h2 id="helpTitle">flowgo — keybinds &amp; capabilities</h2>
+    <div class="sub">Tip: <kbd>⌘</kbd> on macOS, <kbd>Ctrl</kbd> on Windows / Linux.</div>
+
+    <h3>Boxes</h3>
+    <table>
+      <tr><td>Double-click empty canvas</td><td>Add a new box at the cursor (auto-edits the label)</td></tr>
+      <tr><td><kbd>+ Box</kbd> button</td><td>Add a new box at a random position</td></tr>
+      <tr><td>Click a box</td><td>Select it (replaces the current selection)</td></tr>
+      <tr><td>Double-click a box</td><td>Edit its label inline</td></tr>
+      <tr><td><kbd>Enter</kbd> while editing</td><td>Commit the new label</td></tr>
+      <tr><td><kbd>Escape</kbd> while editing</td><td>Cancel the edit</td></tr>
+      <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
+      <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>-</kbd> with boxes selected</td><td>Cycle shape: triangle → rectangle → pentagon → hexagon</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>9</kbd> with boxes or texts selected</td><td>Recolor: <kbd>1</kbd> default · <kbd>2</kbd> inverted (text: bold black) · <kbd>3</kbd>–<kbd>9</kbd> red, orange, yellow, green, blue, purple, gray</td></tr>
+      <tr><td><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>9</kbd> with boxes or texts selected</td><td>Font size: <kbd>1</kbd> default (14px) → <kbd>9</kbd> largest (56px)</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
+    </table>
+
+    <h3>Annotations</h3>
+    <table>
+      <tr><td><kbd>T</kbd></td><td>Spawn a text label at the cursor (auto-edits)</td></tr>
+      <tr><td><kbd>L</kbd></td><td>Spawn a horizontal line at the cursor</td></tr>
+      <tr><td><kbd>B</kbd> / <kbd>V</kbd></td><td>Enter brush mode (drag to paint freehand) / leave brush mode</td></tr>
+      <tr><td>Click a text / line</td><td>Select it</td></tr>
+      <tr><td>Double-click a text</td><td>Edit its label</td></tr>
+      <tr><td>Drag a text / line body</td><td>Move it (with any other selected items)</td></tr>
+      <tr><td>Drag a line endpoint dot (when selected)</td><td>Resize / re-aim the line</td></tr>
+      <tr><td>Hold <kbd>Shift</kbd> while dragging</td><td>Snap to the 20px background grid (boxes, texts, line bodies, line endpoints)</td></tr>
+      <tr><td><kbd>⌥</kbd>-drag any item</td><td>Duplicate selection (boxes, texts, lines, edges)</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove selected text / line</td></tr>
+    </table>
+
+    <h3>Connections</h3>
+    <table>
+      <tr><td>Drag a blue dot to another box</td><td>Create a connection between the two boxes</td></tr>
+      <tr><td>Drag a blue dot onto an existing connected handle</td><td>Re-route the existing connection</td></tr>
+      <tr><td>Drag a blue dot into empty space</td><td>Spawn a new box at the cursor and connect to it</td></tr>
+      <tr><td>Click an edge</td><td>Select it (turns blue + thicker)</td></tr>
+      <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd> on edge</td><td>Remove the edge</td></tr>
+      <tr><td>(creating a new edge)</td><td>Replaces any prior edge between the same pair (undirected)</td></tr>
+    </table>
+
+    <h3>Selection</h3>
+    <table>
+      <tr><td>Drag on empty canvas</td><td>Rubber-band select all boxes intersecting the rectangle</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd></td><td>Select every box, text, and line on the current map</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy / cut / paste the current selection (each paste offsets +20px)</td></tr>
+      <tr><td><kbd>Shift</kbd>-drag on empty canvas</td><td>Add to the existing selection instead of replacing</td></tr>
+      <tr><td>Click on empty canvas</td><td>Clear the selection</td></tr>
+    </table>
+
+    <h3>Submaps</h3>
+    <table>
+      <tr><td><kbd>⌘</kbd>-click (macOS) / <kbd>Ctrl</kbd>-click a box</td><td>Enter that box's submap</td></tr>
+      <tr><td>Middle-click a box</td><td>Enter that box's submap</td></tr>
+      <tr><td><kbd>↑ Up</kbd> button</td><td>Navigate one level up</td></tr>
+      <tr><td>Click a breadcrumb segment</td><td>Jump to that level</td></tr>
+    </table>
+
+    <h3>History</h3>
+    <table>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo (up to 100 steps; each save is one step)</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo (alternate)</td></tr>
+    </table>
+
+    <h3>View</h3>
+    <table>
+      <tr><td>Right-click + drag</td><td>Pan the viewport</td></tr>
+      <tr><td>Resize the window</td><td>Auto-recenters the current map</td></tr>
+    </table>
+
+    <h3>Other</h3>
+    <table>
+      <tr><td><kbd>Escape</kbd></td><td>Close this help · cancel link drag · clear selection · cancel a freshly spawned box</td></tr>
+      <tr><td><kbd>?</kbd> button (top right)</td><td>Open / close this help</td></tr>
+      <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
+    </table>
+  </div>
+</div>
+
+<svg id="edges">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
+    </marker>
+    <marker id="arrow-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#07f"/>
+    </marker>
+  </defs>
+  <g id="edge-layer"></g>
+  <line id="ghost-line" x1="0" y1="0" x2="0" y2="0" stroke="#07f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow-ghost)" style="display:none"/>
+</svg>
+<div id="version"></div>
+<a id="feedbackBtn" href="https://github.com/lassediercks/flowgo/issues/new" target="_blank" rel="noopener noreferrer">Give feedback</a>
+
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
