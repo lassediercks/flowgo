@@ -79,6 +79,12 @@ import {
   nearestHandle,
   polygonAnchor,
 } from "./anchors.ts";
+import {
+  isEditing,
+  startEdit,
+  startTextEdit,
+  wireEdit,
+} from "./edit.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -95,7 +101,7 @@ const recenter = () => recenterPure(state);
 let selectedEdge = null; // reference to an entry in state.edges
 let drag = null;       // box drag
 let link = null;       // link drag from a handle
-let editing = null;
+// editing flag lives in ./edit.ts; ask via isEditing()
 let dropTargetId = null;
 let nearTargetId = null; // box close enough to the cursor during a link drag
 
@@ -151,6 +157,20 @@ attachNavigationListeners();
 
 const setCurrentPath = navigateTo;
 const serializeGraph = serializeGraphPure;
+
+wireEdit({
+  canvas,
+  getCurrentMap: () => state,
+  setCurrentMap: (m) => { state = m; },
+  getCurrentPath: () => currentPath,
+  getGraph: () => graph,
+  setGraph: (g) => { graph = g; },
+  ensureMap,
+  selected,
+  scheduleSave: () => scheduleSave(),
+  renderAll: () => renderAll(),
+  setStatus: (s) => setStatus(s),
+});
 
 wirePersistence({
   getGraph: () => graph,
@@ -540,38 +560,7 @@ function attachLineHandlers(g, lineEl, hitEl, h1, h2, l) {
   }
 }
 
-function startTextEdit(el, t) {
-  if (editing) return;
-  editing = el;
-  el.contentEditable = "true";
-  el.textContent = t.label;
-  el.focus();
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  const finish = (commit) => {
-    el.removeEventListener("blur", onBlur);
-    el.removeEventListener("keydown", onKey);
-    el.contentEditable = "false";
-    editing = null;
-    const newLabel = el.textContent.replace(/\s+/g, " ").trim();
-    if (commit && newLabel && newLabel !== t.label) {
-      t.label = newLabel;
-      scheduleSave();
-    }
-    el.textContent = t.label;
-  };
-  const onBlur = () => finish(true);
-  const onKey = (ev) => {
-    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); el.blur(); }
-    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
-    ev.stopPropagation();
-  };
-  el.addEventListener("blur", onBlur);
-  el.addEventListener("keydown", onKey);
-}
+// startTextEdit and startEdit live in ./edit.ts.
 
 function attachBoxHandlers(el, b) {
   el.addEventListener("mousedown", (e) => {
@@ -872,77 +861,7 @@ function findBoxAt(x, y) {
   return null;
 }
 
-function startEdit(el, b, opts) {
-  if (editing) return;
-  const cancelDeletes = opts && opts.cancelDeletes;
-  const labelEl = el.querySelector(".box-label");
-  if (!labelEl) {
-    // Defensive: if the label span is missing for any reason, rebuild
-    // the box from state and retry. Beats wedging `editing` to a stale
-    // element and locking out every keyboard shortcut.
-    renderAll();
-    const fresh = canvas.querySelector(`.box[data-id="${b.id}"]`);
-    if (fresh) startEdit(fresh, b, opts);
-    return;
-  }
-  editing = el;
-  el.contentEditable = "true";
-  labelEl.textContent = b.label;
-  el.focus();
-  const range = document.createRange();
-  range.selectNodeContents(labelEl);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  const finish = (commit) => {
-    el.removeEventListener("blur", onBlur);
-    el.removeEventListener("keydown", onKey);
-    el.contentEditable = "false";
-    editing = null;
-    // Read from el, not labelEl: contenteditable can land pasted text in
-    // sibling text nodes / divs directly under el (outside the span). The
-    // SVG polygon and handle divs contribute no text content, so el.textContent
-    // is just the label across whichever children the browser used.
-    let newLabel = (el.textContent || "").replace(/\s+/g, " ").trim();
-    if (newLabel.length > MAX_LABEL_LEN) {
-      newLabel = newLabel.slice(0, MAX_LABEL_LEN);
-      setStatus("label truncated to " + MAX_LABEL_LEN + " characters");
-    }
-    if (!commit && cancelDeletes) {
-      // Roll back: drop the just-spawned box and any of its edges.
-      state.boxes = state.boxes.filter(x => x.id !== b.id);
-      state.edges = state.edges.filter(e => e.from !== b.id && e.to !== b.id);
-      const removedPath = currentPath === "/" ? "/" + b.id : currentPath + "/" + b.id;
-      graph.maps = graph.maps.filter(m =>
-        m.path !== removedPath && !m.path.startsWith(removedPath + "/"));
-      state = ensureMap(currentPath);
-      selected.delete(b.id);
-      scheduleSave();
-      renderAll();
-      setStatus("cancelled");
-      return;
-    }
-    if (commit && newLabel && newLabel !== b.label) {
-      b.label = newLabel;
-      scheduleSave();
-    }
-    // Rebuild the affected box from state. Trying to surgically pluck
-    // out only the stray nodes the contenteditable inserted is brittle
-    // (the browser sometimes wraps the label span in a div, and a
-    // direct-child sweep then deletes the wrapper *and* the span). A
-    // full renderAll is heavier but guarantees the DOM matches state.
-    renderAll();
-  };
-  const onBlur = () => finish(true);
-  const onKey = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); el.blur(); }
-    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
-    e.stopPropagation();
-  };
-  el.addEventListener("blur", onBlur);
-  el.addEventListener("keydown", onKey);
-}
+// startEdit lives in ./edit.ts (alongside startTextEdit).
 
 function createBoxAt(x, y, centerOn) {
   const id = uid();
@@ -1066,7 +985,7 @@ document.addEventListener("keydown", (e) => {
     setHelpOpen(false);
     return;
   }
-  if (editing) return;
+  if (isEditing()) return;
   // undo / redo (Cmd on macOS, Ctrl elsewhere; Cmd+Shift+Z or Ctrl+Y for redo)
   const mod = e.metaKey || e.ctrlKey;
   if (mod && !e.altKey && (e.key === "z" || e.key === "Z")) {
