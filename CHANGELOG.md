@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.13](https://github.com/lassediercks/flowgo/compare/0.0.12...0.0.13) (2026-05-01)
+
+
+### Bug Fixes
+
+* validator and also use it against ourself ([3dc25f6](https://github.com/lassediercks/flowgo/commit/3dc25f63c1ee02fe6e0f1652fd9fe3b6a18c9dc7))
+
 ## [0.0.12](https://github.com/lassediercks/flowgo/compare/0.0.11...0.0.12) (2026-05-01)
 
 
