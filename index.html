@@ -240,6 +240,7 @@
     <h3>Selection</h3>
     <table>
       <tr><td>Drag on empty canvas</td><td>Rubber-band select all boxes intersecting the rectangle</td></tr>
+      <tr><td><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd></td><td>Select every box, text, and line on the current map</td></tr>
       <tr><td><kbd>Shift</kbd>-drag on empty canvas</td><td>Add to the existing selection instead of replacing</td></tr>
       <tr><td>Click on empty canvas</td><td>Clear the selection</td></tr>
     </table>
@@ -1682,6 +1683,17 @@ document.addEventListener("keydown", (e) => {
   if (mod && !e.altKey && (e.key === "y" || e.key === "Y")) {
     e.preventDefault();
     redo();
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+    e.preventDefault();
+    selected.clear();
+    for (const b of state.boxes) selected.add(b.id);
+    for (const t of (state.texts || [])) selected.add(t.id);
+    for (const l of (state.lines || [])) selected.add(l.id);
+    if (selectedEdge) { selectedEdge = null; renderEdges(); }
+    applyClasses();
+    setStatus("selected " + selected.size + " items");
     return;
   }
   if (!mod && !e.altKey && (e.key === "t" || e.key === "T")) {
