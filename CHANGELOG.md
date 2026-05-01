@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.17](https://github.com/lassediercks/flowgo/compare/v0.0.16...v0.0.17) (2026-05-01)
+
+
+### Bug Fixes
+
+* **mcp:** normalise labels and add Go tests for tool actions ([c0bf034](https://github.com/lassediercks/flowgo/commit/c0bf0341bcb72cf634f478f49713cb09966a15ce))
+
 ## [0.0.16](https://github.com/lassediercks/flowgo/compare/v0.0.15...v0.0.16) (2026-05-01)
 
 
