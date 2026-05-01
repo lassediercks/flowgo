@@ -109,6 +109,14 @@ import {
   findBoxAt,
   wireMouse,
 } from "./mouse.ts";
+import {
+  attachBoxHandlers,
+  attachLineHandlers,
+  attachTextHandlers,
+  collectMovers,
+  wireAttach,
+} from "./attach.ts";
+import { IS_MAC, primaryMod } from "./platform.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -129,13 +137,7 @@ let link = null;       // link drag from a handle
 let dropTargetId = null;
 let nearTargetId = null; // box close enough to the cursor during a link drag
 
-// On macOS the platform reserves Ctrl+click for the secondary-click gesture
-// (= right-click), so we use Cmd as the "primary" modifier there. On every
-// other OS, Ctrl is the standard primary modifier. The helper picks the
-// correct event property without us having to remember in each callsite.
-const IS_MAC = (typeof navigator !== "undefined") &&
-  /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
-function primaryMod(e) { return IS_MAC ? e.metaKey : e.ctrlKey; }
+// IS_MAC and primaryMod live in ./platform.ts.
 
 const canvas = document.getElementById("canvas");
 const svg = document.getElementById("edges");
@@ -212,6 +214,22 @@ attachNavigationListeners();
 
 const setCurrentPath = navigateTo;
 const serializeGraph = serializeGraphPure;
+
+wireAttach({
+  canvas,
+  lineLayer,
+  ghostLine,
+  currentMap: () => state,
+  findTextById,
+  findLineById,
+  selected,
+  selectedEdge: () => selectedEdge,
+  setSelectedEdge: (e) => { selectedEdge = e; },
+  setDrag: (d) => { drag = d; },
+  setLink: (l) => { link = l; },
+  cloneSelection,
+  setStatus: (s) => setStatus(s),
+});
 
 wireFactories({
   canvas,
@@ -290,235 +308,8 @@ function cloneSelection() {
 // Drag movers (box / text / line / line-endpoint) and the GRID/snap
 // shift-snap helpers live in ./movers.ts.
 
-function collectMovers() {
-  const movers = [];
-  for (const id of selected) {
-    const b = state.boxes.find(x => x.id === id);
-    if (b) {
-      const me = canvas.querySelector(`.box[data-id="${id}"]`);
-      if (me) movers.push(makeBoxMover(b, me));
-      continue;
-    }
-    const t = findTextById(id);
-    if (t) {
-      const me = canvas.querySelector(`.text-item[data-id="${id}"]`);
-      if (me) movers.push(makeTextMover(t, me));
-      continue;
-    }
-    const l = findLineById(id);
-    if (l) {
-      const g = lineLayer.querySelector(`.line-group[data-id="${id}"]`);
-      if (g) {
-        const lineEl = g.querySelector(".line-line");
-        const hitEl = g.querySelector(".line-hit");
-        const h1 = g.querySelector('.line-handle[data-endpoint="1"]');
-        const h2 = g.querySelector('.line-handle[data-endpoint="2"]');
-        movers.push(makeLineMover(l, g, lineEl, hitEl, h1, h2));
-      }
-    }
-  }
-  return movers;
-}
-
-function attachTextHandlers(el, t) {
-  el.addEventListener("mousedown", (e) => {
-    if (el.isContentEditable) return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selected.has(t.id)) {
-      if (!e.shiftKey) selected.clear();
-      selected.add(t.id);
-      if (selectedEdge) { selectedEdge = null; renderEdges(); }
-      applyClasses();
-    }
-    let primaryId = t.id;
-    if (e.altKey) {
-      const idMap = cloneSelection();
-      if (idMap.has(t.id)) primaryId = idMap.get(t.id);
-    }
-    drag = {
-      movers: collectMovers(),
-      primaryId,
-      downX: e.clientX, downY: e.clientY,
-      active: false,
-    };
-  });
-  el.addEventListener("dblclick", (e) => {
-    if (el.isContentEditable) return;
-    e.preventDefault();
-    e.stopPropagation();
-    selected.clear();
-    selected.add(t.id);
-    applyClasses();
-    startTextEdit(el, t);
-  });
-}
-
-function attachLineHandlers(g, lineEl, hitEl, h1, h2, l) {
-  hitEl.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (!selected.has(l.id)) {
-      if (!e.shiftKey) selected.clear();
-      selected.add(l.id);
-      if (selectedEdge) { selectedEdge = null; renderEdges(); }
-      applyClasses();
-    }
-    let primaryId = l.id;
-    if (e.altKey) {
-      const idMap = cloneSelection();
-      if (idMap.has(l.id)) primaryId = idMap.get(l.id);
-    }
-    drag = {
-      movers: collectMovers(),
-      primaryId,
-      downX: e.clientX, downY: e.clientY,
-      active: false,
-    };
-  });
-  for (const [hEl, endpoint] of [[h1, 1], [h2, 2]]) {
-    hEl.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      // endpoint drag — single endpoint, ignores multi-selection
-      selected.clear();
-      selected.add(l.id);
-      if (selectedEdge) { selectedEdge = null; renderEdges(); }
-      applyClasses();
-      drag = {
-        movers: [makeLineEndpointMover(l, endpoint, { g, line: lineEl, hit: hitEl, h1, h2 })],
-        primaryId: l.id,
-        downX: e.clientX, downY: e.clientY,
-        active: false,
-      };
-    });
-  }
-}
-
-// startTextEdit and startEdit live in ./edit.ts.
-
-function attachBoxHandlers(el, b) {
-  el.addEventListener("mousedown", (e) => {
-    if (el.isContentEditable) return;
-    if (e.button === 1 || (e.button === 0 && primaryMod(e))) {
-      e.preventDefault();
-      e.stopPropagation();
-      enterSubmap(b.id);
-      return;
-    }
-    if (e.button !== 0) return;
-
-    // handle click? start link-drag (new edge, or re-route an existing edge).
-    if (e.target.classList.contains("handle")) {
-      e.preventDefault();
-      e.stopPropagation();
-      const code = e.target.dataset.handle;
-
-      // Is there an existing edge anchored to this exact box+handle? If so, pick it up.
-      let pickedEdge = null;
-      let anchoredId = null;
-      let anchoredHandle = "";
-      for (let i = state.edges.length - 1; i >= 0; i--) {
-        const ed = state.edges[i];
-        if (ed.from === b.id && ed.fromHandle === code) {
-          pickedEdge = ed; anchoredId = ed.to;   anchoredHandle = ed.toHandle   || ""; break;
-        }
-        if (ed.to === b.id && ed.toHandle === code) {
-          pickedEdge = ed; anchoredId = ed.from; anchoredHandle = ed.fromHandle || ""; break;
-        }
-      }
-
-      if (pickedEdge) {
-        const idx = state.edges.indexOf(pickedEdge);
-        if (idx >= 0) state.edges.splice(idx, 1);
-        const anchoredBox = state.boxes.find(x => x.id === anchoredId);
-        const anchoredEl = canvas.querySelector(`.box[data-id="${anchoredId}"]`);
-        if (!anchoredBox || !anchoredEl) {
-          // Anchored end vanished; bail out (and put the edge back).
-          state.edges.push(pickedEdge);
-          renderEdges();
-          return;
-        }
-        const fallbackTowardX = b.x + el.offsetWidth / 2;
-        const fallbackTowardY = b.y + el.offsetHeight / 2;
-        const code2 = anchoredHandle || nearestHandle(anchoredBox, anchoredEl, fallbackTowardX, fallbackTowardY);
-        const [hx, hy] = handleAnchor(anchoredEl, anchoredBox, code2);
-        link = {
-          fromId: anchoredId,
-          fromHandle: code2,
-          startX: hx, startY: hy,
-          handleEl: e.target,
-          rerouting: true,
-        };
-        e.target.classList.add("active");
-        ghostLine.setAttribute("x1", hx);
-        ghostLine.setAttribute("y1", hy);
-        ghostLine.setAttribute("x2", toDataX(e.clientX));
-        ghostLine.setAttribute("y2", toDataY(e.clientY));
-        ghostLine.style.display = "";
-        renderEdges();
-        setStatus("re-routing edge — drop on a box, or in empty space");
-        return;
-      }
-
-      // No existing edge: start a new connection from this handle.
-      const [hx, hy] = handleAnchor(el, b, code);
-      link = {
-        fromId: b.id,
-        fromHandle: code,
-        startX: hx, startY: hy,
-        handleEl: e.target,
-      };
-      e.target.classList.add("active");
-      ghostLine.setAttribute("x1", hx);
-      ghostLine.setAttribute("y1", hy);
-      ghostLine.setAttribute("x2", toDataX(e.clientX));
-      ghostLine.setAttribute("y2", toDataY(e.clientY));
-      ghostLine.style.display = "";
-      setStatus("drop on a box to connect, or release to cancel");
-      return;
-    }
-
-    // body drag (single or multi-select)
-    e.preventDefault();
-    e.stopPropagation();
-    // If this box isn't already in the selection, replace the selection with just it.
-    if (!selected.has(b.id)) {
-      if (!e.shiftKey) selected.clear();
-      selected.add(b.id);
-      if (selectedEdge) { selectedEdge = null; renderEdges(); }
-      applyClasses();
-    }
-    let primaryId = b.id;
-
-    // alt/option+drag: duplicate the selection and drag the clones instead.
-    if (e.altKey) {
-      const idMap = cloneSelection();
-      if (idMap.has(b.id)) primaryId = idMap.get(b.id);
-    }
-
-    drag = {
-      movers: collectMovers(),
-      primaryId,
-      downX: e.clientX, downY: e.clientY,
-      active: false,
-    };
-  });
-
-  el.addEventListener("dblclick", (e) => {
-    if (el.isContentEditable) return;
-    e.preventDefault();
-    e.stopPropagation();
-    selected.clear();
-    selected.add(b.id);
-    if (selectedEdge) { selectedEdge = null; renderEdges(); }
-    applyClasses();
-    startEdit(el, b);
-  });
-}
+// attachBoxHandlers / attachTextHandlers / attachLineHandlers and
+// collectMovers all live in ./attach.ts.
 
 // Document-level mouse handling (mousemove / mouseup / contextmenu /
 // auxclick / middle-click pan) plus bg-layer mousedown + dblclick
