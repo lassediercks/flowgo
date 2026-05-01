@@ -261,6 +261,9 @@ func actAddBox(g *Graph, args map[string]any) (any, error) {
 	if label == "" {
 		return nil, fmt.Errorf("label is required")
 	}
+	if len(label) > MaxLabelLen {
+		label = label[:MaxLabelLen]
+	}
 	x := numArg(args, "x", 0)
 	y := numArg(args, "y", 0)
 	m := ensureMapAt(g, path)
@@ -312,7 +315,11 @@ func actUpdateBox(g *Graph, args map[string]any) (any, error) {
 			continue
 		}
 		if hasLabel {
-			m.Boxes[i].Label = stringArg(args, "label", m.Boxes[i].Label)
+			lbl := stringArg(args, "label", m.Boxes[i].Label)
+			if len(lbl) > MaxLabelLen {
+				lbl = lbl[:MaxLabelLen]
+			}
+			m.Boxes[i].Label = lbl
 		}
 		if hasX {
 			m.Boxes[i].X = numArg(args, "x", m.Boxes[i].X)
