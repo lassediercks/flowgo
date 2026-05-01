@@ -69,6 +69,14 @@ import {
   undo,
   wirePersistence,
 } from "./persistence.ts";
+import {
+  GRID,
+  makeBoxMover,
+  makeLineEndpointMover,
+  makeLineMover,
+  makeTextMover,
+  snap,
+} from "./movers.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -489,86 +497,8 @@ function cloneSelection() {
   return idMap;
 }
 
-function makeBoxMover(b, el) {
-  return {
-    el, startX: b.x, startY: b.y,
-    apply(dx, dy, ev) {
-      let nx = this.startX + dx;
-      let ny = this.startY + dy;
-      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
-      b.x = nx;
-      b.y = ny;
-      el.style.left = b.x + "px";
-      el.style.top = b.y + "px";
-    },
-  };
-}
-
-function makeTextMover(t, el) {
-  return {
-    el, startX: t.x, startY: t.y,
-    apply(dx, dy, ev) {
-      let nx = this.startX + dx;
-      let ny = this.startY + dy;
-      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
-      t.x = nx;
-      t.y = ny;
-      el.style.left = t.x + "px";
-      el.style.top = t.y + "px";
-    },
-  };
-}
-
-const GRID = 20;
-function snap(v) { return Math.round(v / GRID) * GRID; }
-
-function makeLineMover(l, gEl, lineEl, hitEl, h1, h2) {
-  return {
-    el: gEl,
-    startX1: l.x1, startY1: l.y1,
-    startX2: l.x2, startY2: l.y2,
-    apply(dx, dy, ev) {
-      let ddx = dx, ddy = dy;
-      if (ev && ev.shiftKey) {
-        // Snap so endpoint 1 lands on the grid; endpoint 2 follows by the same offset.
-        ddx = snap(this.startX1 + dx) - this.startX1;
-        ddy = snap(this.startY1 + dy) - this.startY1;
-      }
-      l.x1 = this.startX1 + ddx; l.y1 = this.startY1 + ddy;
-      l.x2 = this.startX2 + ddx; l.y2 = this.startY2 + ddy;
-      for (const e of [lineEl, hitEl]) {
-        e.setAttribute("x1", l.x1); e.setAttribute("y1", l.y1);
-        e.setAttribute("x2", l.x2); e.setAttribute("y2", l.y2);
-      }
-      if (h1) { h1.setAttribute("cx", l.x1); h1.setAttribute("cy", l.y1); }
-      if (h2) { h2.setAttribute("cx", l.x2); h2.setAttribute("cy", l.y2); }
-    },
-  };
-}
-
-function makeLineEndpointMover(l, endpoint, refs) {
-  const startX = endpoint === 1 ? l.x1 : l.x2;
-  const startY = endpoint === 1 ? l.y1 : l.y2;
-  return {
-    el: refs.g,
-    startX, startY,
-    apply(dx, dy, ev) {
-      let nx = startX + dx;
-      let ny = startY + dy;
-      if (ev && ev.shiftKey) { nx = snap(nx); ny = snap(ny); }
-      if (endpoint === 1) { l.x1 = nx; l.y1 = ny; }
-      else                { l.x2 = nx; l.y2 = ny; }
-      const xa = endpoint === 1 ? "x1" : "x2";
-      const ya = endpoint === 1 ? "y1" : "y2";
-      for (const e of [refs.line, refs.hit]) {
-        e.setAttribute(xa, nx);
-        e.setAttribute(ya, ny);
-      }
-      const h = endpoint === 1 ? refs.h1 : refs.h2;
-      h.setAttribute("cx", nx); h.setAttribute("cy", ny);
-    },
-  };
-}
+// Drag movers (box / text / line / line-endpoint) and the GRID/snap
+// shift-snap helpers live in ./movers.ts.
 
 function collectMovers() {
   const movers = [];
