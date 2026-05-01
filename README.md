@@ -5,6 +5,14 @@ plain-text `.flowgo` file. Every change in the GUI rewrites the file, and the
 file is the source of truth — you can hand-edit it, version-control it, or
 generate it from another tool.
 
+> **License:** [AGPL-3.0](LICENSE). The core editor and MCP server are AGPL —
+> use, modify, and self-host freely. Network use of a modified version
+> obligates you to share the source under the same license.
+>
+> The hosted collaboration / sharing service at **flowgo-map.com** is a
+> separate proprietary product running on top of this core. It is not part of
+> the AGPL release.
+
 ## Install
 
 From a checkout of this repo:
