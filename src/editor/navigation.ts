@@ -84,7 +84,7 @@ export const navigateTo = (p: string, opts?: SetPathOptions): void => {
   b.clearSelectedEdge();
   b.renderAll();
   renderPath();
-  if (!keepViewport) recenter(ensureMap(p));
+  if (!keepViewport) recenter(ensureMap(p) as Parameters<typeof recenter>[0]);
   // Persist the current submap path in the URL hash so the location is
   // bookmarkable and the browser back/forward stack walks navigation.
   const newHash = "#" + p;
