@@ -1,25 +1,28 @@
 map /
-box b1 Versioning 1093.7759604114208 686.4856902282373
-box b2 FlowGo 917 233 6
-box b3 Mapping 801.5 475.5
+box b1 Versioning 1142.7759604114208 619.4856902282373
+box b2 FlowGo 855 -75 5 7 6
+box b3 Mapping 831.5 396.5
 box b4 Layering 454.5 440.5
 box b6 Abstraction 649 705.5
-box b7 "Simple Tools" 1292 92.5
-box b8 "Open Format" 1313.5 501.75
-box b5 "Alpha Software" 585 35
+box b7 Simple 1292 92.5 4 6
+box b8 "Open Format" 1398.5 385.75
+box b5 "Alpha Software" 457 -97
 box b9 "Ephemeral Env" 496.75 168.25
 box b10 Collaboration 897.5 831.2428451141186
+box b11 Exaptation? 1783 263.1214225570593 4 8
 
-edge b3:b b2:t
-edge b4:r b2:l
 edge b2:tr b7:l
 edge b1:t b2:br
-edge b9:r b2:l
 edge b8:l b2:r
 edge b5:r b2:tl
 edge b6:t b3:b
 edge b1:b b10:t
 edge b3:br b10:t
+edge b9:r b2:l
+edge b2:l b4:r
+edge b2:b b3:t
+edge b8:b b1:tr
+edge b8:tr b11:bl
 
 map /b1
 box b1 Versioning 1660 300
@@ -48,9 +51,15 @@ map /b9
 box b1 Temporary 1014 290.5
 
 map /b5
-box b1 Unstable? 1005 207.5
+box b1 Unstable? 1056 217.5 4 3 5
 box b2 Intersting 1005 341.5
 box b3 B 1204 306.5
 
 stroke s1 1554,329 1556,330 1558,329 1564,326 1576,313 1596,288 1618,259 1643,232 1672,218 1707,218 1750,229 1790,248 1818,276 1831,309 1831,346 1821,379 1797,417 1760,448 1719,471 1682,495 1659,518 1655,541 1665,563 1689,583 1718,595 1750,600 1777,600 1788,598
 stroke s1 1754,667 1745,666 1730,666 1717,670 1706,680 1699,692 1697,706 1701,720 1709,732 1718,739 1727,740 1737,733 1745,723 1750,710 1751,697 1746,686 1737,675 1727,670 1715,668
+
+map /b2
+box b1 "Exaptation GmbH" 1313.5 309 6
+box b2 "Lasse Diercks" 1318 112.5
+box b3 https://github.com/lassediercks/flowgo 1252 157
+box b4 https://exaptation.eu/ 1343 437.25

@@ -50,12 +50,13 @@
   }
   #canvas .box, #canvas .text-item { pointer-events: auto; }
   .box {
-    position: absolute; min-width: 80px; padding: 8px 12px;
+    position: absolute; min-width: 80px; padding: 0.55em 0.85em;
     background: #fff; border: 2px solid #333; border-radius: 6px;
     user-select: none;
     box-shadow: 0 1px 2px rgba(0,0,0,.1);
     cursor: grab;
     text-align: center;
+    line-height: 1.2;
   }
   .box.dragging { cursor: grabbing; box-shadow: 0 4px 10px rgba(0,0,0,.2); }
   .box.has-submap { box-shadow: 4px 4px 0 0 #222; }
@@ -68,13 +69,14 @@
 
   .box.shaped {
     background: transparent; border: 0; border-radius: 0;
-    padding: 18px 24px; box-shadow: none;
+    padding: 1.2em 1.6em; box-shadow: none;
     isolation: isolate;
+    box-sizing: border-box;
     aspect-ratio: 1 / 1;
     display: flex; align-items: center; justify-content: center;
   }
   .box.shaped.sides-3 {
-    padding: 18px 18px 12px;
+    padding: 1.2em 1.2em 0.8em;
     align-items: flex-end;
   }
   .box.shaped.dragging { box-shadow: none; }
@@ -86,6 +88,35 @@
   .box.shaped.selected .shape-poly { stroke: #07f; }
   .box.shaped.drop-target .shape-poly { stroke: #2a7; stroke-width: 4; }
   .box.shaped[contenteditable="true"] .shape-poly { fill: #ffffe0; }
+
+  /* Palette: 1 = default (white/black). 2 = inverted. 3-9 = standard hues. */
+  .box.palette-2 { background: #111; border-color: #fff; color: #fff; }
+  .box.palette-3 { background: #fecaca; border-color: #b91c1c; color: #7f1d1d; }
+  .box.palette-4 { background: #fed7aa; border-color: #c2410c; color: #7c2d12; }
+  .box.palette-5 { background: #fef9c3; border-color: #a16207; color: #713f12; }
+  .box.palette-6 { background: #bbf7d0; border-color: #15803d; color: #14532d; }
+  .box.palette-7 { background: #bfdbfe; border-color: #1d4ed8; color: #1e3a8a; }
+  .box.palette-8 { background: #ddd6fe; border-color: #6d28d9; color: #4c1d95; }
+  .box.palette-9 { background: #e5e7eb; border-color: #374151; color: #111827; }
+  .box.shaped.palette-2 .shape-poly { fill: #111; stroke: #fff; }
+  .box.shaped.palette-3 .shape-poly { fill: #fecaca; stroke: #b91c1c; }
+  .box.shaped.palette-4 .shape-poly { fill: #fed7aa; stroke: #c2410c; }
+  .box.shaped.palette-5 .shape-poly { fill: #fef9c3; stroke: #a16207; }
+  .box.shaped.palette-6 .shape-poly { fill: #bbf7d0; stroke: #15803d; }
+  .box.shaped.palette-7 .shape-poly { fill: #bfdbfe; stroke: #1d4ed8; }
+  .box.shaped.palette-8 .shape-poly { fill: #ddd6fe; stroke: #6d28d9; }
+  .box.shaped.palette-9 .shape-poly { fill: #e5e7eb; stroke: #374151; }
+  .box.shaped[class*="palette-"] { background: transparent; }
+
+  /* Font-size scale: 1 = default (14px). 2-9 step monotonically larger. */
+  .box.font-2 { font-size: 16px; }
+  .box.font-3 { font-size: 18px; }
+  .box.font-4 { font-size: 20px; }
+  .box.font-5 { font-size: 24px; }
+  .box.font-6 { font-size: 28px; }
+  .box.font-7 { font-size: 34px; }
+  .box.font-8 { font-size: 42px; }
+  .box.font-9 { font-size: 56px; }
 
   .text-item {
     position: absolute; padding: 4px 6px;
@@ -241,6 +272,8 @@
       <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
       <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
       <tr><td><kbd>+</kbd> / <kbd>-</kbd> with boxes selected</td><td>Cycle shape: triangle → rectangle → pentagon → hexagon</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>9</kbd> with boxes selected</td><td>Recolor: <kbd>1</kbd> default · <kbd>2</kbd> inverted · <kbd>3</kbd>–<kbd>9</kbd> red, orange, yellow, green, blue, purple, gray</td></tr>
+      <tr><td><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>9</kbd> with boxes selected</td><td>Font size: <kbd>1</kbd> default (14px) → <kbd>9</kbd> largest (56px)</td></tr>
       <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
     </table>
 
@@ -596,7 +629,12 @@ function serializeGraph(g) {
     if (multi || m.path !== "/") out += "map " + m.path + "\n";
     for (const b of (m.boxes || [])) {
       let line = "box " + b.id + " " + flowgoQuote(b.label || "") + " " + flowgoNum(b.x) + " " + flowgoNum(b.y);
-      if (b.sides === 3 || b.sides === 5 || b.sides === 6) line += " " + b.sides;
+      const sidesTok = (b.sides === 3 || b.sides === 5 || b.sides === 6) ? b.sides : 0;
+      const paletteTok = (b.palette >= 2 && b.palette <= 9) ? b.palette : 0;
+      const fontTok = (b.font >= 2 && b.font <= 9) ? b.font : 0;
+      if (sidesTok || paletteTok || fontTok) line += " " + (sidesTok || 4);
+      if (paletteTok || fontTok) line += " " + (paletteTok || 1);
+      if (fontTok) line += " " + fontTok;
       out += line + "\n";
     }
     if ((m.boxes || []).length && (m.edges || []).length) out += "\n";
@@ -752,9 +790,13 @@ function renderAll() {
   for (const b of state.boxes) {
     const el = document.createElement("div");
     const sides = boxSides(b);
+    const palette = (b.palette >= 2 && b.palette <= 9) ? b.palette : 1;
+    const font = (b.font >= 2 && b.font <= 9) ? b.font : 1;
     el.className = "box"
       + (sides !== 4 ? " shaped sides-" + sides : "")
-      + (boxHasSubmapContent(b.id) ? " has-submap" : "");
+      + (boxHasSubmapContent(b.id) ? " has-submap" : "")
+      + (palette !== 1 ? " palette-" + palette : "")
+      + (font !== 1 ? " font-" + font : "");
     el.dataset.id = b.id;
     el.style.left = b.x + "px";
     el.style.top = b.y + "px";
@@ -1063,6 +1105,8 @@ function cloneSelection() {
       cloneBoxIds.add(newId);
       const copy = { id: newId, label: b.label, x: b.x, y: b.y };
       if (b.sides) copy.sides = b.sides;
+      if (b.palette) copy.palette = b.palette;
+      if (b.font) copy.font = b.font;
       state.boxes.push(copy);
       continue;
     }
@@ -1741,6 +1785,8 @@ function copySelection() {
     if (b) {
       const copy = { id: b.id, label: b.label, x: b.x, y: b.y };
       if (b.sides) copy.sides = b.sides;
+      if (b.palette) copy.palette = b.palette;
+      if (b.font) copy.font = b.font;
       boxes.push(copy);
       boxIds.add(b.id);
       continue;
@@ -1922,6 +1968,48 @@ document.addEventListener("keydown", (e) => {
   if (!mod && !e.altKey && (e.key === "v" || e.key === "V")) {
     e.preventDefault();
     setBrushMode(false);
+    return;
+  }
+  if (!mod && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+    if (selected.size === 0) return;
+    const palette = parseInt(e.key, 10);
+    let changed = false;
+    for (const id of selected) {
+      const bx = state.boxes.find(x => x.id === id);
+      if (!bx) continue;
+      if (palette === 1) {
+        if (bx.palette) { delete bx.palette; changed = true; }
+      } else if (bx.palette !== palette) {
+        bx.palette = palette;
+        changed = true;
+      }
+    }
+    if (changed) {
+      e.preventDefault();
+      scheduleSave();
+      renderAll();
+    }
+    return;
+  }
+  if (!mod && !e.altKey && e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
+    if (selected.size === 0) return;
+    const font = parseInt(e.code.slice(5), 10);
+    let changed = false;
+    for (const id of selected) {
+      const bx = state.boxes.find(x => x.id === id);
+      if (!bx) continue;
+      if (font === 1) {
+        if (bx.font) { delete bx.font; changed = true; }
+      } else if (bx.font !== font) {
+        bx.font = font;
+        changed = true;
+      }
+    }
+    if (changed) {
+      e.preventDefault();
+      scheduleSave();
+      renderAll();
+    }
     return;
   }
   if (!mod && !e.altKey && (e.key === "+" || e.key === "=" || e.key === "-")) {

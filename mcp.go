@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -228,6 +229,7 @@ var toolActions = map[string]toolAction{
 	"delete_edge": actDeleteEdge,
 	"add_text":    actAddText,
 	"add_line":    actAddLine,
+	"add_stroke":  actAddStroke,
 }
 
 func isReadOnlyTool(name string) bool { return name == "get_state" }
@@ -260,7 +262,32 @@ func actAddBox(g *Graph, args map[string]any) (any, error) {
 	y := numArg(args, "y", 0)
 	m := ensureMapAt(g, path)
 	id := nextID(m, "b")
-	m.Boxes = append(m.Boxes, Box{ID: id, Label: label, X: x, Y: y})
+	box := Box{ID: id, Label: label, X: x, Y: y}
+	if v, ok := args["sides"]; ok {
+		s := intFromAny(v)
+		if s == 3 || s == 5 || s == 6 {
+			box.Sides = s
+		} else if s != 0 && s != 4 {
+			return nil, fmt.Errorf("sides must be 3, 4, 5, or 6")
+		}
+	}
+	if v, ok := args["palette"]; ok {
+		p := intFromAny(v)
+		if p >= 2 && p <= 9 {
+			box.Palette = p
+		} else if p != 0 && p != 1 {
+			return nil, fmt.Errorf("palette must be 1..9")
+		}
+	}
+	if v, ok := args["font"]; ok {
+		f := intFromAny(v)
+		if f >= 2 && f <= 9 {
+			box.Font = f
+		} else if f != 0 && f != 1 {
+			return nil, fmt.Errorf("font must be 1..9")
+		}
+	}
+	m.Boxes = append(m.Boxes, box)
 	return mcpToolText(id), nil
 }
 
@@ -273,6 +300,9 @@ func actUpdateBox(g *Graph, args map[string]any) (any, error) {
 	_, hasLabel := args["label"]
 	_, hasX := args["x"]
 	_, hasY := args["y"]
+	_, hasSides := args["sides"]
+	_, hasPalette := args["palette"]
+	_, hasFont := args["font"]
 	m := ensureMapAt(g, path)
 	for i := range m.Boxes {
 		if m.Boxes[i].ID != id {
@@ -286,6 +316,37 @@ func actUpdateBox(g *Graph, args map[string]any) (any, error) {
 		}
 		if hasY {
 			m.Boxes[i].Y = numArg(args, "y", m.Boxes[i].Y)
+		}
+		if hasSides {
+			s := intFromAny(args["sides"])
+			switch s {
+			case 3, 5, 6:
+				m.Boxes[i].Sides = s
+			case 0, 4:
+				m.Boxes[i].Sides = 0
+			default:
+				return nil, fmt.Errorf("sides must be 3, 4, 5, or 6")
+			}
+		}
+		if hasPalette {
+			p := intFromAny(args["palette"])
+			if p >= 2 && p <= 9 {
+				m.Boxes[i].Palette = p
+			} else if p == 0 || p == 1 {
+				m.Boxes[i].Palette = 0
+			} else {
+				return nil, fmt.Errorf("palette must be 1..9")
+			}
+		}
+		if hasFont {
+			f := intFromAny(args["font"])
+			if f >= 2 && f <= 9 {
+				m.Boxes[i].Font = f
+			} else if f == 0 || f == 1 {
+				m.Boxes[i].Font = 0
+			} else {
+				return nil, fmt.Errorf("font must be 1..9")
+			}
 		}
 		return mcpToolText("ok"), nil
 	}
@@ -370,6 +431,35 @@ func actAddLine(g *Graph, args map[string]any) (any, error) {
 	m := ensureMapAt(g, path)
 	id := nextID(m, "l")
 	m.Lines = append(m.Lines, Line{ID: id, X1: x1, Y1: y1, X2: x2, Y2: y2})
+	return mcpToolText(id), nil
+}
+
+func actAddStroke(g *Graph, args map[string]any) (any, error) {
+	path := stringArg(args, "path", "/")
+	rawPoints, ok := args["points"]
+	if !ok {
+		return nil, fmt.Errorf("points is required (array of [x, y] pairs)")
+	}
+	arr, ok := rawPoints.([]any)
+	if !ok {
+		return nil, fmt.Errorf("points must be an array of [x, y] pairs")
+	}
+	if len(arr) < 2 {
+		return nil, fmt.Errorf("a stroke needs at least two points")
+	}
+	pts := make([][]float64, 0, len(arr))
+	for i, p := range arr {
+		pair, ok := p.([]any)
+		if !ok || len(pair) != 2 {
+			return nil, fmt.Errorf("points[%d] must be [x, y]", i)
+		}
+		px := numArg(map[string]any{"x": pair[0]}, "x", 0)
+		py := numArg(map[string]any{"y": pair[1]}, "y", 0)
+		pts = append(pts, []float64{px, py})
+	}
+	m := ensureMapAt(g, path)
+	id := nextID(m, "s")
+	m.Strokes = append(m.Strokes, Stroke{ID: id, Points: pts})
 	return mcpToolText(id), nil
 }
 
@@ -490,11 +580,11 @@ func mcpTools() []mcpToolDef {
 	}
 
 	addTool("get_state",
-		"Read and return the entire flowgo graph (every map with its boxes, edges, texts, and lines).",
+		"Read and return the entire flowgo graph (every map with its boxes, edges, texts, lines, and strokes).",
 		map[string]any{}, nil)
 
 	addTool("set_state",
-		"Replace the entire graph with the supplied object. Shape: { maps: [{ path, boxes, edges, texts, lines }] }.",
+		"Replace the entire graph with the supplied object. Shape: { maps: [{ path, boxes, edges, texts, lines, strokes }] }. Box fields: id, label, x, y, optional sides (3, 5, or 6 for triangle/pentagon/hexagon; rectangle is default), optional palette (1=default, 2=inverted, 3-9=red/orange/yellow/green/blue/purple/gray), optional font (1=default 14px, 2-9=larger).",
 		map[string]any{
 			"graph": map[string]any{"type": "object", "description": "Full graph to write."},
 		}, []string{"graph"})
@@ -502,20 +592,26 @@ func mcpTools() []mcpToolDef {
 	addTool("add_box",
 		"Add a box to the map at the given path (default '/'). Returns the assigned id.",
 		map[string]any{
-			"path":  schemaString("Map path. Defaults to '/'."),
-			"label": schemaString("Box label."),
-			"x":     schemaNumber("X coordinate."),
-			"y":     schemaNumber("Y coordinate."),
+			"path":    schemaString("Map path. Defaults to '/'."),
+			"label":   schemaString("Box label."),
+			"x":       schemaNumber("X coordinate."),
+			"y":       schemaNumber("Y coordinate."),
+			"sides":   schemaNumber("Optional shape: 3=triangle, 4=rectangle (default), 5=pentagon, 6=hexagon."),
+			"palette": schemaNumber("Optional color: 1=default white, 2=inverted black, 3=red, 4=orange, 5=yellow, 6=green, 7=blue, 8=purple, 9=gray."),
+			"font":    schemaNumber("Optional font-size step: 1=default 14px, 2-9 progressively larger up to 56px."),
 		}, []string{"label", "x", "y"})
 
 	addTool("update_box",
-		"Update a box's label and/or position.",
+		"Update a box's label, position, shape, color, or font size. Pass 4 for sides / 1 for palette or font to reset to default.",
 		map[string]any{
-			"path":  schemaString("Map path. Defaults to '/'."),
-			"id":    schemaString("Box id."),
-			"label": schemaString("New label (optional)."),
-			"x":     schemaNumber("New x (optional)."),
-			"y":     schemaNumber("New y (optional)."),
+			"path":    schemaString("Map path. Defaults to '/'."),
+			"id":      schemaString("Box id."),
+			"label":   schemaString("New label (optional)."),
+			"x":       schemaNumber("New x (optional)."),
+			"y":       schemaNumber("New y (optional)."),
+			"sides":   schemaNumber("Optional shape: 3=triangle, 4=rectangle, 5=pentagon, 6=hexagon."),
+			"palette": schemaNumber("Optional palette index 1..9."),
+			"font":    schemaNumber("Optional font-size step 1..9."),
 		}, []string{"id"})
 
 	addTool("delete_box",
@@ -561,6 +657,23 @@ func mcpTools() []mcpToolDef {
 			"x2":   schemaNumber("End x."),
 			"y2":   schemaNumber("End y."),
 		}, []string{"x1", "y1", "x2", "y2"})
+
+	addTool("add_stroke",
+		"Add a freehand brush stroke as a polyline. Provide at least two [x, y] points.",
+		map[string]any{
+			"path": schemaString("Map path. Defaults to '/'."),
+			"points": map[string]any{
+				"type":        "array",
+				"description": "Array of [x, y] coordinate pairs in canvas space, in stroke order.",
+				"items": map[string]any{
+					"type":     "array",
+					"items":    map[string]any{"type": "number"},
+					"minItems": 2,
+					"maxItems": 2,
+				},
+				"minItems": 2,
+			},
+		}, []string{"points"})
 
 	return tools
 }
@@ -676,6 +789,21 @@ func numArg(args map[string]any, key string, def float64) float64 {
 		}
 	}
 	return def
+}
+
+func intFromAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	case string:
+		i, err := strconv.Atoi(n)
+		if err == nil {
+			return i
+		}
+	}
+	return 0
 }
 
 func filterBoxes(in []Box, keep func(Box) bool) []Box {

@@ -25,11 +25,13 @@ var indexHTML string
 var releasePleaseManifest []byte
 
 type Box struct {
-	ID    string  `json:"id"`
-	Label string  `json:"label"`
-	X     float64 `json:"x"`
-	Y     float64 `json:"y"`
-	Sides int     `json:"sides,omitempty"`
+	ID      string  `json:"id"`
+	Label   string  `json:"label"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Sides   int     `json:"sides,omitempty"`
+	Palette int     `json:"palette,omitempty"`
+	Font    int     `json:"font,omitempty"`
 }
 
 type Edge struct {
@@ -237,6 +239,24 @@ func parse(s string) (Graph, error) {
 					box.Sides = sides
 				}
 			}
+			if len(toks) >= 7 {
+				palette, err := strconv.Atoi(toks[6])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad palette: %v", lineNo, err)
+				}
+				if palette >= 2 && palette <= 9 {
+					box.Palette = palette
+				}
+			}
+			if len(toks) >= 8 {
+				font, err := strconv.Atoi(toks[7])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad font: %v", lineNo, err)
+				}
+				if font >= 2 && font <= 9 {
+					box.Font = font
+				}
+			}
 			g.Maps[cur].Boxes = append(g.Maps[cur].Boxes, box)
 		case "edge":
 			if len(toks) < 3 {
@@ -347,11 +367,28 @@ func serialize(g Graph) string {
 			fmt.Fprintf(&b, "map %s\n", m.Path)
 		}
 		for _, box := range m.Boxes {
-			if box.Sides == 3 || box.Sides == 5 || box.Sides == 6 {
-				fmt.Fprintf(&b, "box %s %s %g %g %d\n", box.ID, quote(box.Label), box.X, box.Y, box.Sides)
-			} else {
-				fmt.Fprintf(&b, "box %s %s %g %g\n", box.ID, quote(box.Label), box.X, box.Y)
+			emitSides := box.Sides == 3 || box.Sides == 5 || box.Sides == 6
+			emitPalette := box.Palette >= 2 && box.Palette <= 9
+			emitFont := box.Font >= 2 && box.Font <= 9
+			fmt.Fprintf(&b, "box %s %s %g %g", box.ID, quote(box.Label), box.X, box.Y)
+			if emitSides || emitPalette || emitFont {
+				sides := box.Sides
+				if !emitSides {
+					sides = 4
+				}
+				fmt.Fprintf(&b, " %d", sides)
 			}
+			if emitPalette || emitFont {
+				palette := box.Palette
+				if !emitPalette {
+					palette = 1
+				}
+				fmt.Fprintf(&b, " %d", palette)
+			}
+			if emitFont {
+				fmt.Fprintf(&b, " %d", box.Font)
+			}
+			b.WriteString("\n")
 		}
 		if len(m.Boxes) > 0 && len(m.Edges) > 0 {
 			b.WriteString("\n")
