@@ -58,6 +58,17 @@ import {
   renderPath,
   wireNavigation,
 } from "./navigation.ts";
+import {
+  SNAPSHOT_ID,
+  SNAPSHOT_MODE,
+  downloadFlowgo,
+  load,
+  redo,
+  reshare,
+  scheduleSave,
+  undo,
+  wirePersistence,
+} from "./persistence.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -69,12 +80,9 @@ let pan = null;
 
 // Keep the no-arg recenter() shape that the rest of main.ts uses.
 const recenter = () => recenterPure(state);
-let savedSnapshot = null;
-let undoStack = [];
-let redoStack = [];
-const UNDO_LIMIT = 100;
+// savedSnapshot / undoStack / redoStack / saveTimer / UNDO_LIMIT all
+// live in ./persistence.ts now.
 let selectedEdge = null; // reference to an entry in state.edges
-let saveTimer = null;
 let drag = null;       // box drag
 let link = null;       // link drag from a handle
 let editing = null;
@@ -118,43 +126,8 @@ function findItem(id) {
 
 function setStatus(_s) { /* hint area removed — keep callers harmless */ }
 
-// Snapshot mode: when the page is served at /m/<id>, edits live in browser
-// memory only. /save is a no-op. The toolbar shows Download + Save-as-new-
-// share; both go to the website's /api/snapshot endpoint (the page's origin).
-const SNAPSHOT_MATCH = location.pathname.match(/^\/m\/([\w-]+)\/?$/);
-const SNAPSHOT_ID = SNAPSHOT_MATCH ? SNAPSHOT_MATCH[1] : null;
-const SNAPSHOT_MODE = !!SNAPSHOT_ID;
-
-async function load() {
-  if (SNAPSHOT_MODE) {
-    document.body.classList.add("snapshot-mode");
-    document.getElementById("downloadBtn").style.display = "";
-    document.getElementById("reshareBtn").style.display  = "";
-    try {
-      const r = await fetch("/api/snapshot/" + encodeURIComponent(SNAPSHOT_ID));
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const body = await r.json();
-      graph = body.graph || body;
-    } catch (err) {
-      setStatus("snapshot " + SNAPSHOT_ID + " not loaded: " + err.message);
-      graph = null;
-    }
-  } else {
-    const r = await fetch("/state");
-    graph = await r.json();
-  }
-  if (!graph || !graph.maps || graph.maps.length === 0) {
-    graph = { maps: [{ path: "/", boxes: [], edges: [] }] };
-  }
-  savedSnapshot = JSON.stringify(graph);
-  undoStack = [];
-  redoStack = [];
-  setCurrentPath(readPathFromURL());
-  setStatus(SNAPSHOT_MODE ? "snapshot " + SNAPSHOT_ID + " — local edits only" : "loaded");
-}
-
-// Path navigation lives in ./navigation.ts. The wire object lets the
-// module read/write the live state held in this file.
+// Path navigation + persistence/history live in their own modules.
+// Wire the host's live state in once at startup.
 wireNavigation({
   getGraph: () => graph,
   getCurrentPath: () => currentPath,
@@ -166,121 +139,20 @@ wireNavigation({
 });
 attachNavigationListeners();
 
-// Existing call sites use setCurrentPath(); keep that name available
-// as a thin alias for navigateTo() while the rest of the file
-// continues to migrate.
 const setCurrentPath = navigateTo;
-
-function scheduleSave() {
-  setStatus("saving…");
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(save, 200);
-}
-
-async function saveBody(body) {
-  if (SNAPSHOT_MODE) {
-    setStatus("local edits only — use Download or Save as new share");
-    return;
-  }
-  await fetch("/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
-  setStatus("saved");
-}
-
-// flowgoQuote / flowgoNum / serializeGraph are imported from
-// src/graph/serialize.ts. They are tested in isolation and round-trip
-// through the Go parser; treat the imports as the canonical surface.
 const serializeGraph = serializeGraphPure;
 
-function downloadFlowgo() {
-  const text = serializeGraph(graph);
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = (SNAPSHOT_ID ? SNAPSHOT_ID : "mindmap") + ".flowgo";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  setStatus("downloaded");
-}
-
-async function reshare() {
-  setStatus("re-sharing…");
-  try {
-    const r = await fetch("/api/snapshot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ graph }),
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const body = await r.json();
-    if (!body.url) throw new Error("response missing url");
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(body.url).catch(() => {});
-    }
-    setStatus("new share: " + body.url + " (copied)");
-    if (body.id) history.pushState(null, "", "/m/" + body.id);
-  } catch (err) {
-    setStatus("re-share failed: " + err.message);
-  }
-}
-
-async function save() {
-  const body = JSON.stringify(graph);
-  if (savedSnapshot !== null && body !== savedSnapshot) {
-    undoStack.push(savedSnapshot);
-    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-    redoStack = [];
-  }
-  savedSnapshot = body;
-  await saveBody(body);
-}
-
-function applyGraphSnapshot(body) {
-  graph = JSON.parse(body);
-  selected.clear();
-  selectedEdge = null;
-  const target = graph.maps.some(m => m.path === currentPath) ? currentPath : "/";
-  // Undo/redo of an in-place edit shouldn't recentre — the user's pan
-  // is part of the view state, not the graph state. Only fall back to
-  // recentre when we actually had to switch maps (e.g. the current
-  // submap got removed by the snapshot we're stepping into).
-  setCurrentPath(target, { keepViewport: target === currentPath });
-}
-
-function undo() {
-  // Flush any pending save so the snapshot reflects the user's latest change before we step back.
-  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-  const body = JSON.stringify(graph);
-  if (savedSnapshot !== null && body !== savedSnapshot) {
-    undoStack.push(savedSnapshot);
-    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-    redoStack = [];
-    savedSnapshot = body;
-  }
-  if (undoStack.length === 0) { setStatus("nothing to undo"); return; }
-  const prev = undoStack.pop();
-  redoStack.push(savedSnapshot);
-  savedSnapshot = prev;
-  applyGraphSnapshot(prev);
-  saveBody(prev);
-  setStatus("undo (" + undoStack.length + " left)");
-}
-
-function redo() {
-  if (redoStack.length === 0) { setStatus("nothing to redo"); return; }
-  const next = redoStack.pop();
-  undoStack.push(savedSnapshot);
-  savedSnapshot = next;
-  applyGraphSnapshot(next);
-  saveBody(next);
-  setStatus("redo");
-}
+wirePersistence({
+  getGraph: () => graph,
+  setGraph: (g) => { graph = g; },
+  serializeGraph: (g) => serializeGraph(g),
+  setCurrentPath: (p, opts) => navigateTo(p, opts),
+  getCurrentPath: () => currentPath,
+  readPathFromURL,
+  setStatus: (s) => setStatus(s),
+  clearSelected: () => selected.clear(),
+  clearSelectedEdge: () => { selectedEdge = null; },
+});
 
 // Thin closure over the live graph + current path so the call sites
 // keep their `boxHasSubmapContent(boxId)` shape.
