@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.15](https://github.com/lassediercks/flowgo/compare/0.0.14...v0.0.15) (2026-05-01)
+
+
+### Bug Fixes
+
+* switch to releases with v ([254be82](https://github.com/lassediercks/flowgo/commit/254be82e3977eee36016a0fbc09c426e8f7ba4f2))
+
 ## [0.0.14](https://github.com/lassediercks/flowgo/compare/0.0.13...0.0.14) (2026-05-01)
 
 
