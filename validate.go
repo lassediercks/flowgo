@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+// MaxLabelLen mirrors the JS-side cap; a checked-in map with a longer
+// label is treated as corrupt by validateGraph. Keep in sync with
+// MAX_LABEL_LEN in index.html.
+const MaxLabelLen = 500
+
 // validateGraph runs semantic checks the .flowgo parser doesn't perform.
 // Returns every violation it finds rather than stopping at the first one,
 // so a single CI run surfaces all problems at once.
@@ -81,6 +86,9 @@ func validateMap(m NamedMap) []error {
 		if !validFont(b.Font) {
 			errs = append(errs, fmt.Errorf("map %q: box %q has invalid font %d (allowed: 0, 2..9)", m.Path, b.ID, b.Font))
 		}
+		if len(b.Label) > MaxLabelLen {
+			errs = append(errs, fmt.Errorf("map %q: box %q label is %d chars (cap is %d)", m.Path, b.ID, len(b.Label), MaxLabelLen))
+		}
 	}
 
 	for i, e := range m.Edges {
@@ -111,6 +119,15 @@ func validateMap(m NamedMap) []error {
 			errs = append(errs, fmt.Errorf("map %q: text id %q collides with %s", m.Path, t.ID, other))
 		}
 		itemIDs[t.ID] = "text"
+		if !validPalette(t.Palette) {
+			errs = append(errs, fmt.Errorf("map %q: text %q has invalid palette %d", m.Path, t.ID, t.Palette))
+		}
+		if !validFont(t.Font) {
+			errs = append(errs, fmt.Errorf("map %q: text %q has invalid font %d", m.Path, t.ID, t.Font))
+		}
+		if len(t.Label) > MaxLabelLen {
+			errs = append(errs, fmt.Errorf("map %q: text %q label is %d chars (cap is %d)", m.Path, t.ID, len(t.Label), MaxLabelLen))
+		}
 	}
 	for i, l := range m.Lines {
 		if l.ID == "" {

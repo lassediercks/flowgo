@@ -38,10 +38,12 @@ type Edge struct {
 
 // Text is a free-floating annotation.
 type Text struct {
-	ID    string  `json:"id"`
-	Label string  `json:"label"`
-	X     float64 `json:"x"`
-	Y     float64 `json:"y"`
+	ID      string  `json:"id"`
+	Label   string  `json:"label"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Palette int     `json:"palette,omitempty"`
+	Font    int     `json:"font,omitempty"`
 }
 
 // Line is a static two-point segment.
@@ -170,7 +172,26 @@ func Parse(s string) (Graph, error) {
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad y: %v", lineNo, err)
 			}
-			g.Maps[cur].Texts = append(g.Maps[cur].Texts, Text{ID: toks[1], Label: toks[2], X: x, Y: y})
+			t := Text{ID: toks[1], Label: toks[2], X: x, Y: y}
+			if len(toks) >= 6 {
+				palette, err := strconv.Atoi(toks[5])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad text palette: %v", lineNo, err)
+				}
+				if palette >= 2 && palette <= 9 {
+					t.Palette = palette
+				}
+			}
+			if len(toks) >= 7 {
+				font, err := strconv.Atoi(toks[6])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad text font: %v", lineNo, err)
+				}
+				if font >= 2 && font <= 9 {
+					t.Font = font
+				}
+			}
+			g.Maps[cur].Texts = append(g.Maps[cur].Texts, t)
 		case "line":
 			if len(toks) < 6 {
 				return g, fmt.Errorf("line %d: line needs id x1 y1 x2 y2", lineNo)
@@ -265,7 +286,20 @@ func Serialize(g Graph) string {
 			b.WriteString("\n")
 		}
 		for _, t := range m.Texts {
-			fmt.Fprintf(&b, "text %s %s %g %g\n", t.ID, quote(t.Label), t.X, t.Y)
+			emitTPalette := t.Palette >= 2 && t.Palette <= 9
+			emitTFont := t.Font >= 2 && t.Font <= 9
+			fmt.Fprintf(&b, "text %s %s %g %g", t.ID, quote(t.Label), t.X, t.Y)
+			if emitTPalette || emitTFont {
+				palette := t.Palette
+				if !emitTPalette {
+					palette = 1
+				}
+				fmt.Fprintf(&b, " %d", palette)
+			}
+			if emitTFont {
+				fmt.Fprintf(&b, " %d", t.Font)
+			}
+			b.WriteString("\n")
 		}
 		if (len(m.Boxes) > 0 || len(m.Edges) > 0 || len(m.Texts) > 0) && len(m.Lines) > 0 {
 			b.WriteString("\n")
