@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.10](https://github.com/lassediercks/flowgo/compare/0.0.9...0.0.10) (2026-05-01)
+
+
+### Features
+
+* add different shapes ([128567f](https://github.com/lassediercks/flowgo/commit/128567fdc7400cf01968508fef6b8b4365c4f9c0))
+* introduce license ([16470be](https://github.com/lassediercks/flowgo/commit/16470be5a36666c7007dd5a3ccd3a846f88ecbec))
+* update map ([93c5384](https://github.com/lassediercks/flowgo/commit/93c5384d98c9d2c08be60e23aa0105ab997cbee4))
+
 ## [0.0.9](https://github.com/lassediercks/flowgo/compare/0.0.8...0.0.9) (2026-05-01)
 
 
