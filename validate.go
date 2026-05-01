@@ -3,12 +3,13 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lassediercks/flowgo/pkg/graph"
 )
 
-// MaxLabelLen mirrors the JS-side cap; a checked-in map with a longer
-// label is treated as corrupt by validateGraph. Keep in sync with
-// MAX_LABEL_LEN in index.html.
-const MaxLabelLen = 500
+// MaxLabelLen mirrors the JS-side cap. Single source of truth for the
+// editor + validator + MCP lives in pkg/graph.
+const MaxLabelLen = graph.MaxLabelLen
 
 // validateGraph runs semantic checks the .flowgo parser doesn't perform.
 // Returns every violation it finds rather than stopping at the first one,
@@ -89,6 +90,9 @@ func validateMap(m NamedMap) []error {
 		if len(b.Label) > MaxLabelLen {
 			errs = append(errs, fmt.Errorf("map %q: box %q label is %d chars (cap is %d)", m.Path, b.ID, len(b.Label), MaxLabelLen))
 		}
+		if strings.ContainsAny(b.Label, "\r\n") {
+			errs = append(errs, fmt.Errorf("map %q: box %q label contains a newline (the .flowgo line-based format breaks on a literal newline)", m.Path, b.ID))
+		}
 	}
 
 	for i, e := range m.Edges {
@@ -127,6 +131,9 @@ func validateMap(m NamedMap) []error {
 		}
 		if len(t.Label) > MaxLabelLen {
 			errs = append(errs, fmt.Errorf("map %q: text %q label is %d chars (cap is %d)", m.Path, t.ID, len(t.Label), MaxLabelLen))
+		}
+		if strings.ContainsAny(t.Label, "\r\n") {
+			errs = append(errs, fmt.Errorf("map %q: text %q label contains a newline (the .flowgo line-based format breaks on a literal newline)", m.Path, t.ID))
 		}
 	}
 	for i, l := range m.Lines {

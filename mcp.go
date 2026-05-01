@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lassediercks/flowgo/pkg/graph"
 )
 
 // Minimal MCP (Model Context Protocol) HTTP transport.
@@ -257,12 +259,9 @@ func actSetState(g *Graph, args map[string]any) (any, error) {
 
 func actAddBox(g *Graph, args map[string]any) (any, error) {
 	path := stringArg(args, "path", "/")
-	label := stringArg(args, "label", "")
+	label := graph.NormalizeLabel(stringArg(args, "label", ""))
 	if label == "" {
 		return nil, fmt.Errorf("label is required")
-	}
-	if len(label) > MaxLabelLen {
-		label = label[:MaxLabelLen]
 	}
 	x := numArg(args, "x", 0)
 	y := numArg(args, "y", 0)
@@ -315,11 +314,9 @@ func actUpdateBox(g *Graph, args map[string]any) (any, error) {
 			continue
 		}
 		if hasLabel {
-			lbl := stringArg(args, "label", m.Boxes[i].Label)
-			if len(lbl) > MaxLabelLen {
-				lbl = lbl[:MaxLabelLen]
-			}
-			m.Boxes[i].Label = lbl
+			m.Boxes[i].Label = graph.NormalizeLabel(
+				stringArg(args, "label", m.Boxes[i].Label),
+			)
 		}
 		if hasX {
 			m.Boxes[i].X = numArg(args, "x", m.Boxes[i].X)
@@ -420,7 +417,7 @@ func actDeleteEdge(g *Graph, args map[string]any) (any, error) {
 
 func actAddText(g *Graph, args map[string]any) (any, error) {
 	path := stringArg(args, "path", "/")
-	label := stringArg(args, "label", "")
+	label := graph.NormalizeLabel(stringArg(args, "label", ""))
 	if label == "" {
 		return nil, fmt.Errorf("label is required")
 	}
