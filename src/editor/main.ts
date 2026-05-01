@@ -77,6 +77,10 @@ import {
   makeTextMover,
   snap,
 } from "./movers.ts";
+import {
+  cloneSelection as cloneSelectionPure,
+  wireClone,
+} from "./clone.ts";
 
 let graph = { maps: [] };
 let currentPath = "/";
@@ -439,58 +443,18 @@ function addOrReplaceEdge(newEdge) {
   state.edges = addOrReplaceEdgePure(state.edges, newEdge);
 }
 
-// Clone all currently-selected items, replace selection with the clones,
-// and return a map { oldId -> newId } so the caller can repoint a "primary".
-// Edges are duplicated only when both endpoints are within the cloned box set.
-function cloneSelection() {
-  const idMap = new Map();
-  const sourceIds = Array.from(selected);
-  const cloneBoxIds = new Set();
+wireClone({
+  currentMap: () => state,
+  selected,
+  findTextById,
+  findLineById,
+  mintId: uid,
+});
 
-  for (const id of sourceIds) {
-    const b = state.boxes.find(x => x.id === id);
-    if (b) {
-      const newId = uid("b");
-      idMap.set(id, newId);
-      cloneBoxIds.add(newId);
-      const copy = { id: newId, label: b.label, x: b.x, y: b.y };
-      if (b.sides) copy.sides = b.sides;
-      if (b.palette) copy.palette = b.palette;
-      if (b.font) copy.font = b.font;
-      state.boxes.push(copy);
-      continue;
-    }
-    const t = findTextById(id);
-    if (t) {
-      const newId = uid("t");
-      idMap.set(id, newId);
-      const tCopy = { id: newId, label: t.label, x: t.x, y: t.y };
-      if (t.palette) tCopy.palette = t.palette;
-      if (t.font) tCopy.font = t.font;
-      state.texts.push(tCopy);
-      continue;
-    }
-    const l = findLineById(id);
-    if (l) {
-      const newId = uid("l");
-      idMap.set(id, newId);
-      state.lines.push({ id: newId, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 });
-    }
-  }
-  // Duplicate edges between cloned boxes (only).
-  for (const ed of state.edges.slice()) {
-    if (idMap.has(ed.from) && idMap.has(ed.to) &&
-        cloneBoxIds.has(idMap.get(ed.from)) && cloneBoxIds.has(idMap.get(ed.to))) {
-      state.edges.push({
-        from: idMap.get(ed.from),
-        fromHandle: ed.fromHandle,
-        to: idMap.get(ed.to),
-        toHandle: ed.toHandle,
-      });
-    }
-  }
-  selected.clear();
-  for (const newId of idMap.values()) selected.add(newId);
+// Thin shell so existing call sites keep their `cloneSelection()` shape;
+// the pure clone returns the id map but leaves rendering to the caller.
+function cloneSelection() {
+  const idMap = cloneSelectionPure();
   renderAll();
   applyClasses();
   scheduleSave();
