@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.0.16](https://github.com/lassediercks/flowgo/compare/v0.0.15...v0.0.16) (2026-05-01)
+
+
+### Features
+
+* text-item palette/font and 500-char label cap ([e5214c6](https://github.com/lassediercks/flowgo/commit/e5214c628d2731a86e979568acd548c601b1864c))
+
+
+### Bug Fixes
+
+* **ci:** drop pnpm version from action-setup, defer to packageManager ([89a6d7c](https://github.com/lassediercks/flowgo/commit/89a6d7ce9d144124b494b6328cbc613499663951))
+* **editor:** typecheck failures uncovered by ci ([f8954e3](https://github.com/lassediercks/flowgo/commit/f8954e3edbbca8024e6febf36f03933fefd562fb))
+* normalize strokes a bit ([7dc373a](https://github.com/lassediercks/flowgo/commit/7dc373aea912df17f377244d591c96daa4f67f50))
+
+
+### Refactoring
+
+* **editor:** drop dead helpers + unused imports from main.ts ([d82eee5](https://github.com/lassediercks/flowgo/commit/d82eee587a725c5f4814a02a63c1ec0b29c395b8))
+* **editor:** extract anchor adapters ([946b8c8](https://github.com/lassediercks/flowgo/commit/946b8c8aa8dfda2e2f4ce591fdf07a0b44427940))
+* **editor:** extract cloneSelection into its own module ([4a94f39](https://github.com/lassediercks/flowgo/commit/4a94f3974ca32dbebc4e21ad11308d83414b1cd0))
+* **editor:** extract create / delete factories ([7194fab](https://github.com/lassediercks/flowgo/commit/7194fabdb0151ed9092f7e042fad6b80cfa7d47b))
+* **editor:** extract document keydown into keys.ts ([0f96926](https://github.com/lassediercks/flowgo/commit/0f96926dc16f5b9f5832353b82399b70052687b4))
+* **editor:** extract drag movers + grid snap ([d616ed6](https://github.com/lassediercks/flowgo/commit/d616ed63dc9a6e32b5949c15189dbe9ea4b94342))
+* **editor:** extract inline label editing ([8ff8154](https://github.com/lassediercks/flowgo/commit/8ff8154c9da6eb6222467b8175e4559799d4f2b0))
+* **editor:** extract mouse handling ([5a68a1c](https://github.com/lassediercks/flowgo/commit/5a68a1c5a43753630cf05a48fcf88ebeae3e1313))
+* **editor:** extract navigation module from main.ts ([e909c01](https://github.com/lassediercks/flowgo/commit/e909c01008c41c9ed7acf5378c34f53fd93f0db5))
+* **editor:** extract per-item attach handlers + platform helper ([9442915](https://github.com/lassediercks/flowgo/commit/94429155e2f8d61f5ca15bad3b0f0924b5cb0a53))
+* **editor:** extract persistence + history module ([4b92268](https://github.com/lassediercks/flowgo/commit/4b922684cab10dc4c668350b4feb04863d9ec4de))
+* **editor:** extract render + proximity into render.ts ([8731919](https://github.com/lassediercks/flowgo/commit/8731919dae5829867e4135233e973d171463b32b))
+
 ## [0.0.15](https://github.com/lassediercks/flowgo/compare/0.0.14...v0.0.15) (2026-05-01)
 
 
