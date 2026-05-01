@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.9](https://github.com/lassediercks/flowgo/compare/0.0.8...0.0.9) (2026-05-01)
+
+
+### Features
+
+* update initial map ([72942ad](https://github.com/lassediercks/flowgo/commit/72942adc3a1653fa1a5a97108848d65d7704f37c))
+
 ## [0.0.8](https://github.com/lassediercks/flowgo/compare/0.0.7...0.0.8) (2026-04-30)
 
 
