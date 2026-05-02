@@ -10,7 +10,6 @@ box b5 "Alpha Software" 457 -97
 box b9 "Ephemeral Env" 494.75 137.25
 box b10 Collaboration 897.5 831.2428451141186
 box b11 Exaptation? 1783 263.1214225570593 4 8
-box b12 "run-opencode.sh Entry Point" 400 50 4 3
 
 edge b1:t b2:br
 edge b8:l b2:r
