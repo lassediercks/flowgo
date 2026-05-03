@@ -417,6 +417,14 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
     color: #333;
   }
+  /* Two help variants live in the modal at once; the body class
+     `touch-input` (set in main.ts from `matchMedia('(pointer: coarse)')`)
+     swaps which one is visible. Touch users don't have keys to bind,
+     and mouse users don't have gestures to learn — showing the wrong
+     variant is more confusing than helpful. */
+  .help-coarse { display: none; }
+  body.touch-input .help-fine { display: none; }
+  body.touch-input .help-coarse { display: block; }
   #helpClose {
     position: absolute; top: 8px; right: 12px;
     background: transparent; border: 0; font-size: 24px;
@@ -445,6 +453,7 @@
 <div id="helpOverlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
   <div id="helpModal">
     <button id="helpClose" aria-label="Close help">×</button>
+    <div class="help-fine">
     <h2 id="helpTitle">flowgo — keybinds &amp; capabilities</h2>
     <div class="sub">Tip: <kbd>⌘</kbd> on macOS, <kbd>Ctrl</kbd> on Windows / Linux.</div>
 
@@ -524,6 +533,57 @@
       <tr><td><kbd>?</kbd> button (top right)</td><td>Open / close this help</td></tr>
       <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
     </table>
+    </div>
+
+    <div class="help-coarse">
+    <h2>flowgo — touch gestures</h2>
+    <div class="sub">A keyboard isn't required — every action below works on a touch screen.</div>
+
+    <h3>Boxes &amp; text</h3>
+    <table>
+      <tr><td>Tap</td><td>Select an item</td></tr>
+      <tr><td>Double-tap</td><td>Edit its label inline</td></tr>
+      <tr><td>Drag</td><td>Move it (and any other selected items in lockstep)</td></tr>
+      <tr><td>Long-press (hold ~½ s)</td><td>Enter the box's submap</td></tr>
+      <tr><td>Drag onto the red bar at the top</td><td>Delete the dragged selection</td></tr>
+    </table>
+
+    <h3>Empty canvas</h3>
+    <table>
+      <tr><td>Drag</td><td>Pan the viewport</td></tr>
+      <tr><td>Tap</td><td>Clear the current selection</td></tr>
+      <tr><td>Double-tap</td><td>Add a new box at the tap point (auto-edits)</td></tr>
+      <tr><td>Pinch with two fingers</td><td>Browser zoom in / out</td></tr>
+    </table>
+
+    <h3>Connections</h3>
+    <table>
+      <tr><td>Tap a box</td><td>Reveals its blue handle dots</td></tr>
+      <tr><td>Drag a handle dot toward another box</td><td>Pull a connection</td></tr>
+      <tr><td>(while dragging)</td><td>The handle that would receive the edge lights up green</td></tr>
+      <tr><td>Drop on a box</td><td>Create / re-route the connection</td></tr>
+      <tr><td>Drop in empty space</td><td>Spawn a new box at the drop point and connect to it</td></tr>
+    </table>
+
+    <h3>Editing labels</h3>
+    <table>
+      <tr><td>Double-tap a box / text</td><td>Open the keyboard and edit the label</td></tr>
+      <tr><td>Tap outside the label</td><td>Commit the change and dismiss the keyboard</td></tr>
+    </table>
+
+    <h3>Navigation</h3>
+    <table>
+      <tr><td>Long-press a box</td><td>Enter its submap</td></tr>
+      <tr><td><kbd>↑ Up</kbd> button (top-left)</td><td>Navigate one level up</td></tr>
+      <tr><td>Tap a breadcrumb segment</td><td>Jump to that level</td></tr>
+    </table>
+
+    <h3>Other</h3>
+    <table>
+      <tr><td>(any change)</td><td>Auto-saves to the <code>.flowgo</code> file (200 ms debounce)</td></tr>
+      <tr><td>Add to home screen</td><td>Launches flowgo as a full-screen standalone app</td></tr>
+    </table>
+    </div>
   </div>
 </div>
 
