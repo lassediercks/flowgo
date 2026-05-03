@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.18](https://github.com/lassediercks/flowgo/compare/v0.0.17...v0.0.18) (2026-05-03)
+
+
+### Features
+
+* **editor:** highlight target handle during link drag ([464cdf9](https://github.com/lassediercks/flowgo/commit/464cdf960e08a3184bb3a2af408d2ab4259ca7e2))
+* **editor:** mobile touch gestures + iOS-friendly layout ([c720c6b](https://github.com/lassediercks/flowgo/commit/c720c6bf0ada30e25da200c740d2469d3801a2c0))
+* **editor:** pure gesture-classification helpers + tests ([1472835](https://github.com/lassediercks/flowgo/commit/14728355a7184924e48c881a9c5d52d0608a15ca))
+
+
+### Bug Fixes
+
+* cleanup main map ([37cfd82](https://github.com/lassediercks/flowgo/commit/37cfd82543856d4e9596bc331cc2ceb95ade65c4))
+
 ## [0.0.17](https://github.com/lassediercks/flowgo/compare/v0.0.16...v0.0.17) (2026-05-01)
 
 
