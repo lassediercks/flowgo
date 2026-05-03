@@ -18,7 +18,7 @@ import {
 } from "./render.ts";
 import { extendStroke, finishStroke, isPainting, isBrushMode, startStroke } from "./brush.ts";
 import { startEdit } from "./edit.ts";
-import { nearestHandle } from "./anchors.ts";
+import { nearestHandle, pickTargetHandle } from "./anchors.ts";
 import { addOrReplaceEdge as addOrReplaceEdgePure } from "../graph/edge.ts";
 import { createBoxAt } from "./factories.ts";
 
@@ -96,6 +96,8 @@ interface MouseBindings {
   readonly setSelectedEdge: (e: EdgeLike | null) => void;
   readonly dropTargetId: () => string | null;
   readonly setDropTargetId: (id: string | null) => void;
+  readonly dropTargetHandle: () => string | null;
+  readonly setDropTargetHandle: (h: string | null) => void;
   readonly scheduleSave: () => void;
   readonly setStatus: (s: string) => void;
 }
@@ -172,8 +174,30 @@ const onMouseMove = (e: MouseEvent): void => {
     const id = target && target.dataset["id"] !== link.fromId
       ? target.dataset["id"] ?? null
       : null;
-    if (id !== w.dropTargetId()) {
+    // Compute the would-be target handle for the live highlight. We
+    // run pickTargetHandle for the same set of inputs the up handler
+    // will use, so the visual cue and the actual drop are guaranteed
+    // to match.
+    let handleCode: string | null = null;
+    if (id && target) {
+      const map = w.currentMap();
+      const tBox = map.boxes.find((b) => b.id === id);
+      if (tBox) {
+        handleCode = pickTargetHandle(
+          target,
+          tBox,
+          link.startX,
+          link.startY,
+          e.clientX,
+          e.clientY,
+        );
+      }
+    }
+    const idChanged = id !== w.dropTargetId();
+    const handleChanged = handleCode !== w.dropTargetHandle();
+    if (idChanged || handleChanged) {
       w.setDropTargetId(id);
+      w.setDropTargetHandle(handleCode);
       applyClasses();
     }
     updateProximity(toDataX(e.clientX), toDataY(e.clientY));
@@ -272,19 +296,14 @@ const onMouseUp = (e: MouseEvent): void => {
       const toId = target.dataset["id"]!;
       const map = w.currentMap();
       const targetBox = map.boxes.find((b) => b.id === toId)!;
-      // If the cursor is over one of this target's handles, use that
-      // handle code. Otherwise pick the handle closest to the source
-      // anchor.
-      let toCode: string | null = null;
-      const stack = document.elementsFromPoint(e.clientX, e.clientY);
-      for (const stackEl of stack) {
-        const el = stackEl as HTMLElement;
-        if (el.classList?.contains("handle") && el.parentElement === target) {
-          toCode = el.dataset["handle"] ?? null;
-          break;
-        }
-      }
-      if (!toCode) toCode = nearestHandle(targetBox, target, link.startX, link.startY);
+      const toCode = pickTargetHandle(
+        target,
+        targetBox,
+        link.startX,
+        link.startY,
+        e.clientX,
+        e.clientY,
+      );
       const newEdge: EdgeLike = { from: link.fromId, to: toId };
       if (link.fromHandle) newEdge.fromHandle = link.fromHandle;
       if (toCode) newEdge.toHandle = toCode;
@@ -321,8 +340,9 @@ const onMouseUp = (e: MouseEvent): void => {
       w.scheduleSave();
     }
     w.setLink(null);
-    if (w.dropTargetId()) {
+    if (w.dropTargetId() || w.dropTargetHandle()) {
       w.setDropTargetId(null);
+      w.setDropTargetHandle(null);
       applyClasses();
     }
     clearProximity();

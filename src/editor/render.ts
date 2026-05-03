@@ -77,6 +77,7 @@ interface RenderBindings {
   readonly selectedEdge: () => EdgeData | null;
   readonly setSelectedEdge: (e: EdgeData | null) => void;
   readonly dropTargetId: () => string | null;
+  readonly dropTargetHandle: () => string | null;
   readonly nearTargetId: () => string | null;
   readonly attachBoxHandlers: (el: HTMLElement, b: BoxData) => void;
   readonly attachTextHandlers: (el: HTMLElement, t: TextData) => void;
@@ -266,11 +267,23 @@ export const renderLines = (): void => {
 export const applyClasses = (): void => {
   const w = must();
   const dropId = w.dropTargetId();
+  const dropHandle = w.dropTargetHandle();
   const nearId = w.nearTargetId();
   for (const el of w.canvas.querySelectorAll<HTMLElement>(".box")) {
+    const isDrop = el.dataset["id"] === dropId;
     el.classList.toggle("selected", w.selected.has(el.dataset["id"] ?? ""));
-    el.classList.toggle("drop-target", el.dataset["id"] === dropId);
+    el.classList.toggle("drop-target", isDrop);
     el.classList.toggle("proximity-target", el.dataset["id"] === nearId);
+    // Mark the specific handle on the drop target that would be used
+    // if the link drag ended right now. Cleared on every box that
+    // isn't the current drop target so a stale `.target` can't
+    // linger across moves.
+    for (const h of el.querySelectorAll<HTMLElement>(".handle")) {
+      h.classList.toggle(
+        "target",
+        isDrop && dropHandle !== null && h.dataset["handle"] === dropHandle,
+      );
+    }
   }
   for (const el of w.canvas.querySelectorAll<HTMLElement>(".text-item")) {
     el.classList.toggle("selected", w.selected.has(el.dataset["id"] ?? ""));
