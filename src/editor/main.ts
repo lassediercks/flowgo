@@ -333,6 +333,16 @@ attachKeyboardListener();
 
 attachHelpListeners();
 
+// Tag the body when the device's primary pointer is coarse (touch /
+// stylus) so the help modal can swap its content (`.help-fine` vs
+// `.help-coarse` in index.html). Reacts live so plugging / unplugging
+// a mouse during the session updates the modal next time it opens.
+const coarseMM = window.matchMedia("(pointer: coarse)");
+const applyTouchClass = () =>
+  document.body.classList.toggle("touch-input", coarseMM.matches);
+coarseMM.addEventListener("change", applyTouchClass);
+applyTouchClass();
+
 document.getElementById("upBtn").addEventListener("click", goUp);
 document.getElementById("downloadBtn").addEventListener("click", downloadFlowgo);
 document.getElementById("reshareBtn").addEventListener("click", reshare);
