@@ -12,6 +12,8 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   root: resolve(here, "src/editor"),
   publicDir: false,
+  server: { port: 54041, strictPort: true },
+  preview: { port: 54041, strictPort: true },
   build: {
     outDir: resolve(here, "dist"),
     emptyOutDir: true,
