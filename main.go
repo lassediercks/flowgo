@@ -103,9 +103,9 @@ func main() {
 	})
 	http.HandleFunc("/mcp", handleMCP)
 
-	ln, err := net.Listen("tcp", bindHost+":0")
+	ln, err := net.Listen("tcp", bindHost+":54041")
 	if err != nil {
-		die("listen: %v", err)
+		die("listen on :54041: %v (is another flowgo already running?)", err)
 	}
 	addr := ln.Addr().(*net.TCPAddr)
 	url := fmt.Sprintf("http://%s:%d", bindHost, addr.Port)
