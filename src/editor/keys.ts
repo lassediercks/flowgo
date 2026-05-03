@@ -72,6 +72,7 @@ interface KeysBindings {
   readonly link: () => { handleEl: HTMLElement } | null;
   readonly clearLink: () => void;
   readonly setDropTargetId: (id: string | null) => void;
+  readonly setDropTargetHandle: (h: string | null) => void;
   readonly clearProximity: () => void;
   readonly lastCursor: { x: number; y: number };
   readonly scheduleSave: () => void;
@@ -293,6 +294,7 @@ export const attachKeyboardListener = (): void => {
         w.ghostLine.style.display = "none";
         w.clearLink();
         w.setDropTargetId(null);
+        w.setDropTargetHandle(null);
         applyClasses();
         w.clearProximity();
       }

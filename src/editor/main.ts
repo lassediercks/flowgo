@@ -80,6 +80,7 @@ let drag = null;          // box / text / line drag
 let link = null;          // link drag from a handle dot
 let selectedEdge = null;  // entry in state.edges
 let dropTargetId = null;  // box under cursor during link drag
+let dropTargetHandle = null; // handle code on dropTargetId that would receive the edge
 let nearTargetId = null;  // box close enough to the cursor for proximity
 
 // ---------------------------------------------------------------
@@ -141,6 +142,7 @@ wireRender({
   selectedEdge: () => selectedEdge,
   setSelectedEdge: (e) => { selectedEdge = e; },
   dropTargetId: () => dropTargetId,
+  dropTargetHandle: () => dropTargetHandle,
   nearTargetId: () => nearTargetId,
   attachBoxHandlers,
   attachTextHandlers,
@@ -275,6 +277,8 @@ wireMouse({
   setSelectedEdge: (e) => { selectedEdge = e; },
   dropTargetId: () => dropTargetId,
   setDropTargetId: (id) => { dropTargetId = id; },
+  dropTargetHandle: () => dropTargetHandle,
+  setDropTargetHandle: (h) => { dropTargetHandle = h; },
   scheduleSave: () => scheduleSave(),
   setStatus,
 });
@@ -291,6 +295,7 @@ wireKeys({
   link: () => link,
   clearLink: () => { link = null; },
   setDropTargetId: (id) => { dropTargetId = id; },
+  setDropTargetHandle: (h) => { dropTargetHandle = h; },
   clearProximity: () => clearProximity(),
   lastCursor,
   scheduleSave: () => scheduleSave(),

@@ -53,6 +53,34 @@ export const polygonAnchor = (
   return hit ?? [box.x + box.width / 2, box.y + box.height / 2];
 };
 
+// Decide which handle on a target box would receive a connection if
+// the link drag ended right now. Used by both the move handlers
+// (live highlight) and the up/end handlers (final edge routing) so
+// the visual cue and the actual drop are guaranteed to agree.
+//
+// Priority: if the cursor / finger is directly over one of the
+// target's own handle dots, use that exact code. Otherwise fall
+// back to whichever handle is closest to the *source* anchor — same
+// logic the historical mouse onMouseUp path used.
+export const pickTargetHandle = (
+  targetEl: HTMLElement,
+  targetBox: BoxLike,
+  fromX: number,
+  fromY: number,
+  clientX: number,
+  clientY: number,
+): HandleCode => {
+  const stack = document.elementsFromPoint(clientX, clientY);
+  for (const el of stack) {
+    const h = el as HTMLElement;
+    if (h.classList?.contains("handle") && h.parentElement === targetEl) {
+      const code = h.dataset["handle"];
+      if (code) return code as HandleCode;
+    }
+  }
+  return nearestHandle(targetBox, targetEl, fromX, fromY);
+};
+
 // Resolve an edge endpoint to a screen-space point. Triangles /
 // pentagons / hexagons ignore the stored handle code (their outline
 // has no fixed corners that match the rectangle handle codes) and

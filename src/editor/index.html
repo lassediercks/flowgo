@@ -193,6 +193,17 @@
   }
   .box:hover .handle, .handle.active, .box.proximity-target .handle { opacity: 1; }
   .box[contenteditable="true"] .handle { display: none; }
+  /* Highlight the specific handle that would receive the connection
+     if the link drag ended right now. Same green as `.drop-target`
+     on the box border so the two cues read as one signal. The glow
+     is box-shadow-only — using `transform: scale(...)` would clobber
+     the centering transforms on the side handles (h-t / h-r / h-b /
+     h-l). */
+  .handle.target {
+    background: #2a7;
+    box-shadow: 0 0 0 4px rgba(34, 170, 119, .35);
+    opacity: 1;
+  }
 
   .h-t  { top: -20px;    left: 50%;     transform: translateX(-50%); }
   .h-r  { top: 50%;      right: -20px;  transform: translateY(-50%); }
