@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.19](https://github.com/lassediercks/flowgo/compare/v0.0.18...v0.0.19) (2026-05-03)
+
+
+### Features
+
+* introduce device agnostic help modal ([0f80b30](https://github.com/lassediercks/flowgo/commit/0f80b30212597a9240cb06275abbfb1c1bd986cb))
+* remove obsolete strokes ([1fa3e5e](https://github.com/lassediercks/flowgo/commit/1fa3e5e1b11610311c6055a067bc7861327a51e3))
+
 ## [0.0.18](https://github.com/lassediercks/flowgo/compare/v0.0.17...v0.0.18) (2026-05-03)
 
 
