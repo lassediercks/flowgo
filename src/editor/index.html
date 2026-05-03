@@ -2,23 +2,129 @@
 <html>
 <head>
 <meta charset="utf-8">
+<!--
+  width=device-width + initial-scale=1: lay the page out in actual
+    device CSS pixels so touch coordinates match rendering (without
+    this iOS Safari uses a 980px layout viewport and visually scales
+    it, which produced the original "background not filled" / pan
+    "shake" complaints).
+
+  No viewport-fit=cover: with cover set, iOS Safari extends the page
+    *behind* its floating URL bar, and `env(safe-area-inset-top)`
+    only accounts for the system status bar / notch (~47px) — there
+    is no env var for the URL bar itself. Result: fixed-top elements
+    overlap Safari's chrome. Without cover, Safari constrains the
+    page to the actual safe content area (below the URL bar) and
+    `top: 0` lands where it should. Trade-off: in landscape on
+    notched devices the canvas doesn't extend into the notch sides;
+    that's an acceptable default for in-browser use.
+
+  apple-mobile-web-app-capable + status-bar-style: when the user adds
+    flowgo to their home screen, launch as a real standalone PWA
+    (no URL bar), so the editor genuinely fills the screen.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="flowgo">
+<meta name="mobile-web-app-capable" content="yes">
+<script>
+  // iOS Safari's URL bar / bottom toolbar collapse and expand as the
+  // user interacts. `position: fixed; bottom: 0` anchors to the
+  // *layout* viewport (which doesn't shrink when the URL bar is
+  // visible), so fixed bottom-chrome ends up underneath the toolbar
+  // — and the bg-layer at body height: 100% leaves a gap on the
+  // bottom when the URL bar collapses.
+  //
+  // The fix: drive --app-h from window.visualViewport.height — the
+  // authoritative value for the area the user can actually see —
+  // and resize body to it. Every chrome element below uses
+  // position: absolute (relative to body) so they're physically
+  // bounded by --app-h and can't escape into iOS chrome.
+  (function () {
+    var root = document.documentElement;
+    var update = function () {
+      var vv = window.visualViewport;
+      var h = (vv && vv.height) || window.innerHeight;
+      // Keyboard detection: iOS Safari shrinks the visual viewport
+      // from the bottom when the soft keyboard appears, firing the
+      // same resize event as a URL-bar transition. If we honored it
+      // we'd collapse body to half the screen mid-edit. Threshold
+      // 150px comfortably exceeds any URL-bar / toolbar combined
+      // height but is well below typical keyboard heights (~260px+).
+      // Same logic as `isKeyboardResize` in src/editor/gestures.ts —
+      // duplicated here because this script runs before the module
+      // graph loads. Keep the threshold in sync with the helper if
+      // it ever changes.
+      if (window.innerHeight - h > 150) return;
+      root.style.setProperty("--app-h", h + "px");
+    };
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", update);
+      window.visualViewport.addEventListener("scroll", update);
+    }
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    update();
+  })();
+</script>
 <title>flowgo</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; font: 14px system-ui, sans-serif; }
+  :root {
+    /* JS sets this from window.visualViewport.height on every resize
+       so the layout tracks iOS Safari's URL bar collapse / expand
+       per-frame. The CSS fallbacks are 100dvh (modern) and 100%
+       (ancient) for the few hundred ms before the JS first runs and
+       for browsers without the visualViewport API. */
+    --app-h: 100dvh;
+  }
+  html, body {
+    margin: 0; overflow: hidden; font: 14px system-ui, sans-serif;
+    height: 100%;
+    height: var(--app-h);
+    /* Suppress browser rubber-band / overscroll so our pan gesture
+       doesn't fight the page bounce. */
+    overscroll-behavior: none;
+    background: #fafafa;
+  }
+  /* Make body the containing block for all the position:absolute
+     chrome below — that way every button stays bound to the visual
+     viewport instead of escaping into the iOS Safari toolbar /
+     home-indicator area. */
+  body { position: relative; }
+  /* Block one-finger pan/scroll so our drag handlers get the full
+     stream, but leave pinch-zoom to the browser — it's the natural
+     mobile zoom and re-implementing it on top of the data viewport
+     would mean reflowing every transform pipeline.
+
+     Set on html / body too so touches on the chrome (toolbar,
+     feedback button, version text, empty surroundings) can't
+     trigger iOS Safari's URL-bar / page scroll behavior — that was
+     the "second scroll area at the bottom" that pulled the canvas
+     out of view. The help modal still needs to scroll vertically,
+     so it overrides via `touch-action: pan-y`. */
+  html, body, #bg-layer, #canvas, #bg-svg, .box, .text-item { touch-action: pinch-zoom; }
+  #helpModal { touch-action: pan-y; }
   #toolbar {
-    position: fixed; top: 8px; left: 8px; z-index: 10;
+    position: absolute; z-index: 10;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     background: #fff; border: 1px solid #ccc; border-radius: 6px;
     padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
   }
   #toolbar button { margin-right: 6px; }
   #version {
-    position: fixed; bottom: 6px; left: 8px;
+    position: absolute;
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     color: #999; font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     pointer-events: none;
   }
   #feedbackBtn {
-    position: fixed; bottom: 8px; right: 8px; z-index: 11;
+    position: absolute; z-index: 11;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     background: #fff; border: 1px solid #ccc; border-radius: 6px;
     padding: 6px 10px; font-size: 12px; color: #444;
     text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.1);
@@ -66,6 +172,12 @@
   .box.selected { border-color: #07f; }
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
+  /* iOS Safari auto-zooms any focused editable whose computed
+     font-size is below 16px — that zoom shifts the visual viewport,
+     which is what made the canvas bottom edge reappear when starting
+     to edit a label. The .font-2..font-9 classes are already ≥16px
+     so they win on specificity and stay at their chosen size. */
+  .box[contenteditable="true"], .text-item[contenteditable="true"] { font-size: 16px; }
 
   .box.shaped {
     background: transparent; border: 0; border-radius: 0;
@@ -214,19 +326,60 @@
   .h-bl { bottom: -20px; left: -20px; }
   .h-br { bottom: -20px; right: -20px; }
 
+  /* Coarse pointers (touchscreens / styluses): bigger hit targets and
+     always-shown handles on the selected box, since :hover doesn't
+     exist. Proximity glow during a drag still overrides via the rule
+     above (`.box.proximity-target .handle`). */
+  @media (pointer: coarse) {
+    .handle { width: 22px; height: 22px; }
+    .h-t  { top: -28px; }
+    .h-r  { right: -28px; }
+    .h-b  { bottom: -28px; }
+    .h-l  { left: -28px; }
+    .h-tl { top: -28px; left: -28px; }
+    .h-tr { top: -28px; right: -28px; }
+    .h-bl { bottom: -28px; left: -28px; }
+    .h-br { bottom: -28px; right: -28px; }
+    .box.selected .handle { opacity: 1; }
+  }
+
   svg { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; z-index: 1; }
   .edge-group { pointer-events: none; }
   .edge-hit { pointer-events: stroke; cursor: pointer; }
   .edge-line { stroke: #333; stroke-width: 2; }
   .edge-group.selected .edge-line { stroke: #07f; stroke-width: 3; }
   .selection-band {
-    position: fixed; z-index: 6; pointer-events: none;
+    position: absolute; z-index: 6; pointer-events: none;
     border: 1px dashed #07f; background: rgba(0,119,255,.08);
   }
   body.panning, body.panning * { cursor: grabbing !important; }
 
+  /* Delete drop zone: only meaningful while a touch drag is in
+     flight (body.dragging). Pushed below the notch / status bar via
+     the safe-area inset (works because the viewport meta sets
+     `viewport-fit=cover`) so the bar never overlaps iOS chrome. */
+  #deleteZone {
+    position: absolute; left: 0; right: 0;
+    top: env(safe-area-inset-top, 0px);
+    height: 56px; z-index: 50;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(220, 38, 38, .12);
+    border-bottom: 2px dashed #dc2626;
+    color: #991b1b; font-weight: 600; font-size: 13px;
+    pointer-events: none; /* never blocks taps; we hit-test by coords */
+    user-select: none;
+    transition: background-color .12s, color .12s;
+  }
+  body.dragging #deleteZone { display: flex; }
+  #deleteZone.armed {
+    background: rgba(220, 38, 38, .35);
+    color: #fff;
+  }
+
   #helpBtn {
-    position: fixed; top: 8px; right: 8px; z-index: 11;
+    position: absolute; z-index: 11;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
     width: 32px; height: 32px; border-radius: 50%;
     background: #fff; border: 1px solid #ccc;
     font-size: 16px; font-weight: bold; color: #555;
@@ -236,7 +389,7 @@
   #helpBtn:hover { background: #f0f0f0; }
 
   #helpOverlay {
-    position: fixed; inset: 0; z-index: 100;
+    position: absolute; inset: 0; z-index: 100;
     background: rgba(0,0,0,.45);
     display: flex; align-items: center; justify-content: center;
   }
@@ -280,6 +433,7 @@
   <button id="reshareBtn"  style="display:none">Save as new share</button>
   <span id="path"></span>
 </div>
+<div id="deleteZone">drop here to delete</div>
 <div id="bg-layer"></div>
 <svg id="bg-svg">
   <g id="stroke-layer"></g>

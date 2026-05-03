@@ -56,6 +56,7 @@ import {
 import { deleteSelection, wireFactories } from "./factories.ts";
 import { attachKeyboardListener, wireKeys } from "./keys.ts";
 import { attachMouseListeners, wireMouse } from "./mouse.ts";
+import { attachTouchListeners, wireTouch } from "./touch.ts";
 import {
   attachBoxHandlers,
   attachLineHandlers,
@@ -283,6 +284,29 @@ wireMouse({
   setStatus,
 });
 attachMouseListeners();
+
+wireTouch({
+  canvas,
+  ghostLine,
+  currentMap: () => state,
+  findTextById,
+  mintId: () => uid(),
+  selected,
+  drag: () => drag,
+  setDrag: (d) => { drag = d; },
+  pan: () => pan,
+  setPan: (p) => { pan = p; },
+  link: () => link,
+  setLink: (l) => { link = l; },
+  dropTargetId: () => dropTargetId,
+  setDropTargetId: (id) => { dropTargetId = id; },
+  dropTargetHandle: () => dropTargetHandle,
+  setDropTargetHandle: (h) => { dropTargetHandle = h; },
+  selectedEdge: () => selectedEdge,
+  setSelectedEdge: (e) => { selectedEdge = e; },
+  scheduleSave: () => scheduleSave(),
+});
+attachTouchListeners();
 
 wireKeys({
   canvas,
