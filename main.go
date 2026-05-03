@@ -60,6 +60,7 @@ func main() {
 		return
 	}
 	bindHost := "127.0.0.1"
+	useRandomName := false
 	var positional []string
 	for _, a := range os.Args[1:] {
 		switch a {
@@ -69,6 +70,8 @@ func main() {
 		case "help", "-h", "--help":
 			printUsage(os.Stdout)
 			return
+		case "new":
+			useRandomName = true
 		case "--host":
 			bindHost = "0.0.0.0"
 		default:
@@ -79,16 +82,38 @@ func main() {
 			positional = append(positional, a)
 		}
 	}
-	if len(positional) < 1 {
+	switch {
+	case useRandomName:
+		filePath = randomMapName() + ".flowgo"
+		for i := 0; i < 5; i++ {
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				break
+			}
+			filePath = randomMapName() + ".flowgo"
+		}
+	case len(positional) >= 1:
+		filePath = positional[0]
+		if !strings.HasSuffix(filePath, ".flowgo") {
+			filePath += ".flowgo"
+		}
+	default:
 		printUsage(os.Stderr)
 		os.Exit(1)
 	}
-	filePath = positional[0]
 
+	createdFile := false
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		if err := os.WriteFile(filePath, []byte(""), 0644); err != nil {
+		seed := serialize(Graph{Maps: []NamedMap{{
+			Path:  "/",
+			Boxes: []Box{{ID: "b1", Label: seedBoxLabel(filePath)}},
+		}}})
+		if err := os.WriteFile(filePath, []byte(seed), 0644); err != nil {
 			die("create file: %v", err)
 		}
+		createdFile = true
+	}
+	if createdFile {
+		fmt.Printf("initialised the flowgo interface on a new file %s\n", filePath)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +204,9 @@ func printUsage(w *os.File) {
 
 Usage:
   flowgo <file.flowgo>             open the editor (binds 127.0.0.1 only)
-  flowgo <file.flowgo> --host      bind 0.0.0.0 (reach from outside this machine/container)
+  flowgo <name>                    open <name>.flowgo, creating it if missing
+  flowgo new                       create a map with a random humanized name (e.g. solid_frontend.flowgo)
+  flowgo <name|new> --host         bind 0.0.0.0 (reach from outside this machine/container)
   flowgo serve [flags]             public mode: multi-workspace MCP + share-via-webhook
                                    (run 'flowgo serve --help' for flags)
   flowgo version                   print version info
