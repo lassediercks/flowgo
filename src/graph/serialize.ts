@@ -13,6 +13,8 @@ export interface BoxData {
   readonly sides?: number | undefined;
   readonly palette?: number | undefined;
   readonly font?: number | undefined;
+  readonly rotation?: number | undefined;
+  readonly anchor?: boolean | undefined;
 }
 
 export interface EdgeData {
@@ -104,11 +106,19 @@ export const serializeGraph = (g: ConcreteGraph): string => {
       const sidesTok = isSidesValue(b.sides) ? b.sides : 0;
       const paletteTok = isPaletteOrFont(b.palette) ? b.palette! : 0;
       const fontTok = isPaletteOrFont(b.font) ? b.font! : 0;
-      if (sidesTok || paletteTok || fontTok) line += " " + (sidesTok || 4);
-      if (paletteTok || fontTok) line += " " + (paletteTok || 1);
-      if (fontTok) line += " " + fontTok;
+      const rotTok = typeof b.rotation === "number" && b.rotation !== 0
+        ? ((b.rotation % 360) + 360) % 360
+        : 0;
+      if (sidesTok || paletteTok || fontTok || rotTok) line += " " + (sidesTok || 4);
+      if (paletteTok || fontTok || rotTok) line += " " + (paletteTok || 1);
+      if (fontTok || rotTok) line += " " + (fontTok || 1);
+      if (rotTok) line += " " + rotTok;
       out += line + "\n";
     }
+
+    // Single-anchor invariant: emit at most one `anchor <id>` line.
+    const anchored = (m.boxes ?? []).find((b) => b.anchor);
+    if (anchored) out += `anchor ${anchored.id}\n`;
 
     if ((m.boxes?.length ?? 0) && (m.edges?.length ?? 0)) out += "\n";
     for (const e of m.edges ?? []) {

@@ -301,6 +301,18 @@
   body.brush-mode .stroke-group,
   body.brush-mode .edge-group { pointer-events: none; }
 
+  body.line-mode,
+  body.line-mode #bg-layer,
+  body.line-mode #canvas,
+  body.line-mode .box,
+  body.line-mode .text-item { cursor: crosshair; }
+  body.line-mode .handle { display: none; }
+  body.line-mode #canvas .box,
+  body.line-mode #canvas .text-item,
+  body.line-mode .line-group,
+  body.line-mode .stroke-group,
+  body.line-mode .edge-group { pointer-events: none; }
+
   .line-group .line-hit { pointer-events: stroke; cursor: grab; }
   .line-group.dragging .line-hit { cursor: grabbing; }
   .line-line { stroke: #555; stroke-width: 2; }
@@ -484,6 +496,8 @@
       <tr><td>Drag a box body</td><td>Move it (and any other selected boxes together)</td></tr>
       <tr><td><kbd>⌥</kbd>-drag (Alt-drag)</td><td>Duplicate the selection and drag the copies</td></tr>
       <tr><td><kbd>+</kbd> / <kbd>-</kbd> with boxes selected</td><td>Cycle shape: triangle → rectangle → pentagon → hexagon</td></tr>
+      <tr><td><kbd>Shift</kbd> + <kbd>+</kbd> / <kbd>-</kbd> with shaped boxes selected</td><td>Rotate the shape (label stays upright) by ±45°</td></tr>
+      <tr><td><kbd>A</kbd> with one box selected</td><td>Toggle anchor — the map centers on this box on load (one anchor per map)</td></tr>
       <tr><td><kbd>1</kbd>–<kbd>9</kbd> with boxes or texts selected</td><td>Recolor: <kbd>1</kbd> default · <kbd>2</kbd> inverted (text: bold black) · <kbd>3</kbd>–<kbd>9</kbd> red, orange, yellow, green, blue, purple, gray</td></tr>
       <tr><td><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>9</kbd> with boxes or texts selected</td><td>Font size: <kbd>1</kbd> default (14px) → <kbd>9</kbd> largest (56px)</td></tr>
       <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove all selected boxes (and their submap subtrees)</td></tr>
@@ -492,7 +506,7 @@
     <h3>Annotations</h3>
     <table>
       <tr><td><kbd>T</kbd></td><td>Spawn a text label at the cursor (auto-edits)</td></tr>
-      <tr><td><kbd>L</kbd></td><td>Spawn a horizontal line at the cursor</td></tr>
+      <tr><td><kbd>L</kbd></td><td>Enter line-draw mode: click start, click end · <kbd>L</kbd> or <kbd>Escape</kbd> to exit</td></tr>
       <tr><td><kbd>B</kbd> / <kbd>V</kbd></td><td>Enter brush mode (drag to paint freehand) / leave brush mode</td></tr>
       <tr><td>Click a text / line</td><td>Select it</td></tr>
       <tr><td>Double-click a text</td><td>Edit its label</td></tr>

@@ -17,6 +17,7 @@ import {
   updateProximity,
 } from "./render.ts";
 import { extendStroke, finishStroke, isPainting, isBrushMode, startStroke } from "./brush.ts";
+import { commitLineOnRelease, isLineMode, placeLinePoint, updateLinePreview } from "./line.ts";
 import { startEdit } from "./edit.ts";
 import { nearestHandle, pickTargetHandle } from "./anchors.ts";
 import { addOrReplaceEdge as addOrReplaceEdgePure } from "../graph/edge.ts";
@@ -133,6 +134,10 @@ const onMouseMove = (e: MouseEvent): void => {
     extendStroke(e);
     return;
   }
+  if (isLineMode()) {
+    updateLinePreview(e);
+    return;
+  }
   const pan = w.pan();
   if (pan) {
     viewport.x = pan.startVX + (e.clientX - pan.downX);
@@ -212,6 +217,10 @@ const onMouseUp = (e: MouseEvent): void => {
   const w = must();
   if (isPainting()) {
     finishStroke();
+    return;
+  }
+  if (isLineMode()) {
+    commitLineOnRelease(e);
     return;
   }
   if (w.pan()) {
@@ -368,6 +377,10 @@ const onBgMouseDown = (e: MouseEvent): void => {
     startStroke(e);
     return;
   }
+  if (isLineMode()) {
+    placeLinePoint(e);
+    return;
+  }
   if (!e.shiftKey) w.selected.clear();
   if (w.selectedEdge()) {
     w.setSelectedEdge(null);
@@ -385,6 +398,7 @@ const onBgMouseDown = (e: MouseEvent): void => {
 };
 
 const onBgDblClick = (e: MouseEvent): void => {
+  if (isBrushMode() || isLineMode()) return;
   const dx = toDataX(e.clientX);
   const dy = toDataY(e.clientY);
   createBoxAt(dx, dy, { x: dx, y: dy });

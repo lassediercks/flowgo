@@ -19,13 +19,19 @@ import (
 // they're consumed by the editor and any other process that exchanges
 // graphs as JSON.
 type Box struct {
-	ID      string  `json:"id"`
-	Label   string  `json:"label"`
-	X       float64 `json:"x"`
-	Y       float64 `json:"y"`
-	Sides   int     `json:"sides,omitempty"`
-	Palette int     `json:"palette,omitempty"`
-	Font    int     `json:"font,omitempty"`
+	ID       string  `json:"id"`
+	Label    string  `json:"label"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Sides    int     `json:"sides,omitempty"`
+	Palette  int     `json:"palette,omitempty"`
+	Font     int     `json:"font,omitempty"`
+	Rotation int     `json:"rotation,omitempty"`
+	// Anchor marks this box as the map-level recenter target. At most
+	// one box per map carries Anchor=true; the parser/serializer enforce
+	// the invariant. Persisted in the .flowgo text format as a separate
+	// per-map `anchor <id>` directive rather than a positional token.
+	Anchor bool `json:"anchor,omitempty"`
 }
 
 // Edge connects two boxes within the same map.
@@ -152,6 +158,16 @@ func Parse(s string) (Graph, error) {
 					box.Font = font
 				}
 			}
+			if len(toks) >= 9 {
+				rot, err := strconv.Atoi(toks[8])
+				if err != nil {
+					return g, fmt.Errorf("line %d: bad rotation: %v", lineNo, err)
+				}
+				rot = ((rot % 360) + 360) % 360
+				if rot != 0 {
+					box.Rotation = rot
+				}
+			}
 			g.Maps[cur].Boxes = append(g.Maps[cur].Boxes, box)
 		case "edge":
 			if len(toks) < 3 {
@@ -205,6 +221,24 @@ func Parse(s string) (Graph, error) {
 				coords[i] = v
 			}
 			g.Maps[cur].Lines = append(g.Maps[cur].Lines, Line{ID: toks[1], X1: coords[0], Y1: coords[1], X2: coords[2], Y2: coords[3]})
+		case "anchor":
+			if len(toks) < 2 {
+				return g, fmt.Errorf("line %d: anchor needs id", lineNo)
+			}
+			id := toks[1]
+			found := false
+			for i := range g.Maps[cur].Boxes {
+				if g.Maps[cur].Boxes[i].ID == id {
+					g.Maps[cur].Boxes[i].Anchor = true
+					found = true
+				} else {
+					// Enforce single anchor per map: clear any prior winners.
+					g.Maps[cur].Boxes[i].Anchor = false
+				}
+			}
+			if !found {
+				return g, fmt.Errorf("line %d: anchor refers to unknown box %q", lineNo, id)
+			}
 		case "stroke":
 			if len(toks) < 4 {
 				return g, fmt.Errorf("line %d: stroke needs id and at least two points", lineNo)
@@ -256,25 +290,41 @@ func Serialize(g Graph) string {
 			emitSides := box.Sides == 3 || box.Sides == 5 || box.Sides == 6
 			emitPalette := box.Palette >= 2 && box.Palette <= 9
 			emitFont := box.Font >= 2 && box.Font <= 9
+			emitRotation := box.Rotation != 0
 			fmt.Fprintf(&b, "box %s %s %g %g", box.ID, quote(box.Label), box.X, box.Y)
-			if emitSides || emitPalette || emitFont {
+			if emitSides || emitPalette || emitFont || emitRotation {
 				sides := box.Sides
 				if !emitSides {
 					sides = 4
 				}
 				fmt.Fprintf(&b, " %d", sides)
 			}
-			if emitPalette || emitFont {
+			if emitPalette || emitFont || emitRotation {
 				palette := box.Palette
 				if !emitPalette {
 					palette = 1
 				}
 				fmt.Fprintf(&b, " %d", palette)
 			}
-			if emitFont {
-				fmt.Fprintf(&b, " %d", box.Font)
+			if emitFont || emitRotation {
+				font := box.Font
+				if !emitFont {
+					font = 1
+				}
+				fmt.Fprintf(&b, " %d", font)
+			}
+			if emitRotation {
+				fmt.Fprintf(&b, " %d", box.Rotation)
 			}
 			b.WriteString("\n")
+		}
+		// Single-anchor invariant: emit at most one `anchor <id>` line.
+		// First Anchor=true wins; later occurrences are ignored.
+		for _, box := range m.Boxes {
+			if box.Anchor {
+				fmt.Fprintf(&b, "anchor %s\n", box.ID)
+				break
+			}
 		}
 		if len(m.Boxes) > 0 && len(m.Edges) > 0 {
 			b.WriteString("\n")

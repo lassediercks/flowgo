@@ -1,18 +1,25 @@
 map /
-box b1 Versioning 1142.7759604114208 619.4856902282373
-box b2 FlowGo 810 16 5 7 6
-box b3 Mapping 769.5 360.5
-box b4 "Layering (CMD/CTRL + Click)" 454.5 440.5
-box b6 Abstraction 649 705.5
-box b7 Simple 1292 92.5 4 6
-box b8 "Open Format" 1398.5 385.75
-box b5 "Alpha Software" 457 -97
-box b9 "Ephemeral Env" 494.75 137.25
-box b10 Collaboration 897.5 831.2428451141186
-box b11 Exaptation? 1783 263.1214225570593 4 8
+box b1 Versioning 1016.7759604114208 291.48569022823733
+box b2 FlowGo 846 -72 5 7 6
+box b3 Mapping 857.5 213.5
+box b4 "Layering (CMD/CTRL + Click)" 591.5 193.5
+box b6 Abstraction 727 332.5
+box b7 Simple 1152 8.5 4 6
+box b8 "Open Format" 1131.5 190.75
+box b5 "Alpha Software" 610 -87
+box b9 "Ephemeral Env" 590.75 75.25
+box b10 Collaboration 838.5 416.2428451141186
+box b11 Exaptation? 1434 52.121422557059304 4 8
+box b12 "A new box" 1816.25 490.6214225570593
+box b13 "is it a hexagon?" 1536.25 679.6214225570593 6 1 1 180
+box b14 "shift & +/- rotates shapes" 1772 656 6 1 1 90
+box b15 "(1) numbers are attached to styles" 1516 943.3107112785297
+box b16 "(2) numbers are attached to styles" 1514 997 4 2
+box b17 "(3) numbers are attached to styles" 1516 1048 4 3
+box b18 "Shift+Number changes size" 1491 1103 4 2 5
+anchor b2
 
 edge b1:t b2:br
-edge b8:l b2:r
 edge b5:r b2:tl
 edge b6:t b3:b
 edge b1:b b10:t
@@ -21,8 +28,21 @@ edge b9:r b2:l
 edge b2:b b3:t
 edge b8:b b1:tr
 edge b8:tr b11:bl
-edge b7:l b2:r
 edge b4:t b2:bl
+edge b8:l b2:br
+edge b2:r b7:l
+
+text t2 Tips: 1473.25 395.6214225570593 1 9
+text t3 "* Double click to create boxes\n* Press T to create static text\n* Press L to create Lines\n* CMD/CTRL Click to enter a box\n* use + & - to alter shapes\n* shift should™ make things snap" 1491.25 490.6214225570593
+text t1 "like this" 1811.25 533.6214225570593
+text t4 "disclaimer & thougts" -73.75 524.6214225570593 1 5
+text t5 "is it vibecoded?\nyes!\n\nis it useful?\nabsolutely!\n\nshould it be a foundational piece\nin any serious production pipeline?\nabsolutely not\n\nif its vibecoded, doesnt that mean I can re-build this?\nabsolutely, but maybe we can improve it together?\n\nis it ironic to vibe-code a tool with a proprietary LLM model that\nonly is good because of large scale theft and then open source the tool?\nyeah" -61.75 573.6214225570593
+text t6 "I'd argue when an output is easy to judge (flowgo file, visual map) the amount of\nhuman judgement we can apply to the HOW of the output can decrease\n\ngiven basic ethics and security is in place" 173.77596041142078 1050.4856902282372
+text t7 "Do I hope to get any personal gain out of this in some shape or form?\nyeah sure, bills gotta be paid" -227.22403958857922 953.4856902282372
+
+line l1 1826.75 571.12 2210.75 595.12
+line l2 1469.5 387.81 2329.5 385.81
+line l3 1456.5 406.81 1387.5 1079.81
 
 map /b1
 box b1 Versioning 1660 300
@@ -78,3 +98,7 @@ box b1 "Get the spinner, we're in layer 5" 575 365 4 2 9
 
 map /b4/b1/b1/b1/b1/b1
 box b1 "maybe it was the friends we made alone the way" 815 413
+
+map /b8
+box b1 "You can run this gui 100% local with the go binary in the repo" 952.5 165.5
+box b2 https://github.com/lassediercks/flowgo 1099.5 226.5

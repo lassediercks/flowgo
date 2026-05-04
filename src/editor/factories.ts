@@ -7,8 +7,8 @@
 // just-spawned box.
 //
 // `createTextAt` does the same shape for free-floating text items.
-// `createLineAt` drops a 160px horizontal line centred on the
-// cursor.
+// `createLineSegment` drops a line between two explicit endpoints
+// (used by line-draw mode after the user clicks start and end).
 //
 // `deleteSelection` removes every selected item plus the submaps
 // that hung off any deleted box (and edges that referenced one of
@@ -127,11 +127,15 @@ export const createTextAt = (cx: number, cy: number): void => {
   w.scheduleSave();
 };
 
-export const createLineAt = (cx: number, cy: number): void => {
+export const createLineSegment = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): void => {
   const w = must();
   const id = w.mintId("l");
-  const half = 80;
-  const l: LineLike = { id, x1: cx - half, y1: cy, x2: cx + half, y2: cy };
+  const l: LineLike = { id, x1, y1, x2, y2 };
   w.currentMap().lines.push(l);
   w.selected.clear();
   w.selected.add(id);

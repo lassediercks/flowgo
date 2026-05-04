@@ -24,6 +24,7 @@ import {
   recenter as recenterPure,
 } from "./viewport.ts";
 import { isBrushMode, wireBrush } from "./brush.ts";
+import { wireLine } from "./line.ts";
 import { wireClipboard } from "./clipboard.ts";
 import {
   attachNavigationListeners,
@@ -256,6 +257,11 @@ wireBrush({
   currentMap: () => state,
   scheduleSave: () => scheduleSave(),
   afterCommit: () => renderStrokes(),
+  setStatus,
+});
+
+wireLine({
+  lineLayer: () => lineLayer,
   setStatus,
 });
 

@@ -26,6 +26,8 @@ interface BoxData {
   sides?: number;
   palette?: number;
   font?: number;
+  rotation?: number;
+  anchor?: boolean;
 }
 
 interface TextData {
@@ -133,6 +135,9 @@ export const renderAll = (): void => {
       poly.setAttribute("points", polygonPointsForSides(sides));
       poly.setAttribute("vector-effect", "non-scaling-stroke");
       svg.appendChild(poly);
+      if (b.rotation) {
+        svg.style.transform = `rotate(${b.rotation}deg)`;
+      }
       el.appendChild(svg);
     }
     const label = document.createElement("span");

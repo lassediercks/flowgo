@@ -22,10 +22,15 @@ import {
   pasteSelection,
 } from "./clipboard.ts";
 import {
-  createLineAt,
   createTextAt,
   deleteSelection,
 } from "./factories.ts";
+import {
+  cancelPendingLine,
+  isDrawingLine,
+  isLineMode,
+  setLineMode,
+} from "./line.ts";
 import {
   applyClasses,
   renderAll,
@@ -41,6 +46,8 @@ interface BoxLike {
   sides?: number;
   palette?: number;
   font?: number;
+  rotation?: number;
+  anchor?: boolean;
 }
 
 interface TextLike {
@@ -128,6 +135,54 @@ const cycleShape = (dir: 1 | -1): boolean => {
   renderEdges();
   w.scheduleSave();
   return true;
+};
+
+// Rotate the SVG-rendered shape on every selected polygonal box
+// (sides 3/5/6) by `delta` degrees. Rectangles have no rotatable
+// shape and are skipped silently. Storage is normalised to [0, 360);
+// 0 is dropped so the field stays optional.
+const rotateSelected = (delta: number): boolean => {
+  const w = must();
+  if (w.selected.size === 0) return false;
+  const map = w.currentMap();
+  let changed = false;
+  for (const id of w.selected) {
+    const bx = map.boxes.find((x) => x.id === id);
+    if (!bx) continue;
+    if (boxSides(bx) === 4) continue;
+    const cur = bx.rotation ?? 0;
+    const next = (((cur + delta) % 360) + 360) % 360;
+    if (next === 0) delete bx.rotation;
+    else bx.rotation = next;
+    changed = true;
+  }
+  return changed;
+};
+
+// Toggle the anchor flag on the (single) selected box. Anchor is a
+// per-map singleton — turning it on clears the flag from any other
+// box on the same map, so the recenter target is unambiguous.
+const toggleAnchor = (): void => {
+  const w = must();
+  if (w.selected.size !== 1) {
+    w.setStatus("anchor needs exactly one selected box");
+    return;
+  }
+  const id = w.selected.values().next().value as string;
+  const map = w.currentMap();
+  const target = map.boxes.find((b) => b.id === id);
+  if (!target) {
+    w.setStatus("anchor only applies to boxes");
+    return;
+  }
+  const turningOn = !target.anchor;
+  for (const b of map.boxes) {
+    if (b.anchor) delete b.anchor;
+  }
+  if (turningOn) target.anchor = true;
+  w.scheduleSave();
+  renderAll();
+  w.setStatus(turningOn ? "anchored " + id : "anchor cleared");
 };
 
 const applyPalette = (palette: number): boolean => {
@@ -238,7 +293,7 @@ export const attachKeyboardListener = (): void => {
     }
     if (!mod && !e.altKey && (e.key === "l" || e.key === "L")) {
       e.preventDefault();
-      createLineAt(toDataX(w.lastCursor.x), toDataY(w.lastCursor.y));
+      setLineMode(!isLineMode());
       return;
     }
     if (!mod && !e.altKey && (e.key === "b" || e.key === "B")) {
@@ -249,6 +304,12 @@ export const attachKeyboardListener = (): void => {
     if (!mod && !e.altKey && (e.key === "v" || e.key === "V")) {
       e.preventDefault();
       setBrushMode(false);
+      setLineMode(false);
+      return;
+    }
+    if (!mod && !e.altKey && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      toggleAnchor();
       return;
     }
 
@@ -272,6 +333,26 @@ export const attachKeyboardListener = (): void => {
         e.preventDefault();
         w.scheduleSave();
         renderAll();
+      }
+      return;
+    }
+
+    // Rotate shape (Shift + +/-): keep the text upright, spin the
+    // polygon by ±45°. Variants tolerated across keyboard layouts:
+    // US Shift+= produces "+", DE Shift++ produces "*", Shift+- can
+    // produce either "_" or a still-"-" `e.key` depending on layout/OS,
+    // so we accept both. Must be checked BEFORE shape cycling so a
+    // Shift-modified key never falls through to the cycle handler.
+    if (
+      !mod && !e.altKey && e.shiftKey &&
+      (e.key === "+" || e.key === "*" || e.key === "_" || e.key === "-")
+    ) {
+      if (w.selected.size === 0) return;
+      const dir = e.key === "_" || e.key === "-" ? -1 : 1;
+      if (rotateSelected(dir * 45)) {
+        e.preventDefault();
+        renderAll();
+        w.scheduleSave();
       }
       return;
     }
@@ -322,6 +403,11 @@ export const attachKeyboardListener = (): void => {
     if (e.key === "Escape") {
       if (isBrushMode()) {
         setBrushMode(false);
+        return;
+      }
+      if (isLineMode()) {
+        if (isDrawingLine()) cancelPendingLine();
+        else setLineMode(false);
         return;
       }
       const link = w.link();
