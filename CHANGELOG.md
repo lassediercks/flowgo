@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.20](https://github.com/lassediercks/flowgo/compare/v0.0.19...v0.0.20) (2026-05-04)
+
+
+### Features
+
+* **editor:** line-draw mode, shape rotation, anchor box, dev loop ([a0d8c00](https://github.com/lassediercks/flowgo/commit/a0d8c00097e348112aa2880d37678f826fbbdf7b))
+* **editor:** multi-line labels and Enter-to-edit ([fa7f6de](https://github.com/lassediercks/flowgo/commit/fa7f6de2f71a1055963f23e59202cbe07d3c541d))
+* some cli convenience ([594f87e](https://github.com/lassediercks/flowgo/commit/594f87e8ff98a3279a6feb02cf15eb669f90e6b6))
+
+
+### Bug Fixes
+
+* **validate:** allow newlines in box and text labels ([1581eda](https://github.com/lassediercks/flowgo/commit/1581edad3ed2c3eead32878d18728e8ce59b6a4e))
+
 ## [0.0.19](https://github.com/lassediercks/flowgo/compare/v0.0.18...v0.0.19) (2026-05-03)
 
 
