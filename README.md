@@ -13,64 +13,56 @@ generate it from another tool.
 > separate proprietary product running on top of this core. It is not part of
 > the AGPL release.
 
-## Install
+## Try it
 
-From a checkout of this repo:
+The path of least resistance, in order:
 
-```
-go install .
-```
+**1. In your browser, no install:** [flowgo-map.com](https://flowgo-map.com)
 
-This drops a `flowgo` binary into `$(go env GOBIN)` (or `$(go env GOPATH)/bin`).
-Make sure that directory is on your `PATH`.
-
-For a one-off build without installing:
+**2. On your machine, one command:**
 
 ```
-go build -o flowgo .
+go install github.com/lassediercks/flowgo@latest
+flowgo new
 ```
 
-Verify:
+`flowgo new` mints a `<random_name>.flowgo` file in the current directory and
+opens it in your browser. The in-app help (`?` button, top-right) covers every
+keybind and gesture.
 
-```
-flowgo version
-flowgo help
-```
-
-## Run
+To open an existing file:
 
 ```
 flowgo mindmap.flowgo
 ```
 
-The binary starts an HTTP server on a random `127.0.0.1` port, prints the URL,
-and tries to open your browser. If the file doesn't exist it's created empty.
+The binary starts an HTTP server on `127.0.0.1:54041` (or a fallback port),
+prints the URL, and opens your browser. If the file doesn't exist it's created
+with one seed box.
 
-## Editor
+---
 
-| Action                                     | Result                                       |
-|--------------------------------------------|----------------------------------------------|
-| `+ Box` / double-click empty canvas        | Add a new box (centered at cursor) and edit  |
-| Click a box                                | Select it                                    |
-| Double-click a box                         | Edit its label inline (Enter / Escape)       |
-| Drag a box body                            | Move it (and any other boxes selected)       |
-| ⌥-drag a box body                          | Duplicate the selection and drag the copies  |
-| Drag on empty canvas                       | Rubber-band select boxes; Shift to add       |
-| Drag a blue dot to another box / handle   | Create a connection (replaces any prior one) |
-| Drag a blue dot onto an existing handle    | Re-route the existing connection             |
-| Drag a blue dot into empty space           | Spawn a new box and connect to it            |
-| Click an edge                              | Select it (turns blue + thicker)             |
-| `Delete` / `Backspace`                     | Remove all selected boxes / the selected edge|
-| Middle-click or ⌘-click a box              | Enter its submap                             |
-| `↑ Up` / breadcrumb segments               | Navigate back up                             |
+## Contributing
 
-Connections are undirected and at most one exists between any pair of boxes —
-creating a new one between A and B replaces any prior connection.
+Everything below is for working on flowgo itself.
 
-Each map has its own box-ID namespace; deleting a box also removes its submap
-and all descendants.
+### Local dev loop
 
-## File format
+```
+just dev
+```
+
+Runs `vite build --watch` for the frontend and re-runs `go run` whenever any
+`*.go` file or `dist/index.html` changes. Requires `pnpm` and `go`. Ctrl+C
+tears both processes down cleanly.
+
+Other recipes:
+
+- `just build` — frontend bundle + `./flowgo` binary
+- `just test` — vitest + `go test ./...`
+- `just typecheck` — `tsc --noEmit`
+
+### File format
 
 Plain UTF-8 text, one directive per line, `#` for comments.
 
@@ -78,26 +70,33 @@ Plain UTF-8 text, one directive per line, `#` for comments.
 # optional map header; defaults to "/" if omitted
 map /
 
-box <id> <label> <x> <y>
-edge <id>[:<handle>] <id>[:<handle>]
+box    <id> <label> <x> <y> [sides] [palette] [font] [rotation]
+edge   <id>[:<handle>] <id>[:<handle>]
+text   <id> <label> <x> <y> [palette] [font]
+line   <id> <x1> <y1> <x2> <y2>
+stroke <id> <x>,<y> <x>,<y> …
+anchor <id>
 ```
 
 - `id` is alphanumeric; unique within its map.
-- `label` is bare word or `"quoted string"` (use `\"` and `\\` to escape).
+- `label` is a bare word or `"quoted string"` (escapes: `\"`, `\\`, `\n`).
 - `<handle>` is one of `t`, `r`, `b`, `l`, `tl`, `tr`, `bl`, `br` — a side or
   corner of the box. Omit to let the renderer auto-pick the nearest handle.
 - `map <path>` switches the current map. Paths look like `/`, `/b1`, `/b1/c2`.
   Each path corresponds to "the inside of" the box at that path.
+- `anchor <id>` marks one box per map as the recenter target. At most one per
+  map; the parser/serializer enforce the invariant.
 
-### Example
+#### Example
 
 ```
 box b1 "Project" 120 100
 box b2 "Notes"   320 100
 edge b1:r b2:l
+anchor b1
 
 map /b1
-box c1 "Goals"     100 100
+box c1 "Goals"       100 100
 box c2 "Open issues" 280 100
 edge c1 c2
 
@@ -108,7 +107,7 @@ box d1 "Bug #42" 100 100
 Files without any `map` directive parse as a single root map — fully
 backwards-compatible with the flat form.
 
-## MCP (AI integration)
+### MCP (AI integration)
 
 `flowgo <file>` also serves a [Model Context Protocol](https://spec.modelcontextprotocol.io)
 endpoint at `/mcp` on the same port as the GUI. Point any MCP client (Claude
@@ -133,7 +132,7 @@ All tools take an optional `path` (defaults to `/`) so AI can target submaps.
 The transport is JSON-RPC 2.0 over POST (streamable-HTTP, simple form — no
 sessions or SSE).
 
-## Releases
+### Releases
 
 Releases are managed by [release-please](https://github.com/googleapis/release-please).
 Push commits to `main` using
@@ -152,4 +151,3 @@ Versioning policy (configured in `release-please-config.json`):
 
 The version baked into the release binaries is set via
 `-ldflags "-X main.version=<tag>"` and is shown by `flowgo version`.
-

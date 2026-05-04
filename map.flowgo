@@ -36,9 +36,9 @@ text t2 Tips: 1473.25 395.6214225570593 1 9
 text t3 "* Double click to create boxes\n* Press T to create static text\n* Press L to create Lines\n* CMD/CTRL Click to enter a box\n* use + & - to alter shapes\n* shift should™ make things snap" 1491.25 490.6214225570593
 text t1 "like this" 1811.25 533.6214225570593
 text t4 "disclaimer & thougts" -73.75 524.6214225570593 1 5
-text t5 "is it vibecoded?\nyes!\n\nis it useful?\nabsolutely!\n\nshould it be a foundational piece\nin any serious production pipeline?\nabsolutely not\n\nif its vibecoded, doesnt that mean I can re-build this?\nabsolutely, but maybe we can improve it together?\n\nis it ironic to vibe-code a tool with a proprietary LLM model that\nonly is good because of large scale theft and then open source the tool?\nyeah" -61.75 573.6214225570593
-text t6 "I'd argue when an output is easy to judge (flowgo file, visual map) the amount of\nhuman judgement we can apply to the HOW of the output can decrease\n\ngiven basic ethics and security is in place" 173.77596041142078 1050.4856902282372
-text t7 "Do I hope to get any personal gain out of this in some shape or form?\nyeah sure, bills gotta be paid" -227.22403958857922 953.4856902282372
+text t5 "is it vibecoded?\n- yes!\n\nis it useful?\n- absolutely!\n\nshould it be a foundational piece\nin any serious production pipeline?\n-absolutely not\n\nif its vibecoded, doesnt that mean I can re-build this?\n- absolutely, but maybe we can improve it together?\n\nis it ironic to vibe-code a tool with a proprietary LLM model that is\nonly good because of large scale theft and then open source the tool?\n- yeah" -61.75 573.6214225570593
+text t6 "I'd argue when an output is easy to judge (flowgo file, visual map) the amount of\nhuman judgement we can apply to the HOW of the output can decrease\ngiven basic ethics and security is in place" -299.2240395885792 1069.4856902282372 7 5
+text t7 "Do I hope to get any personal gain out of this in some shape or form?\n- yeah sure, bills gotta be paid" -227.22403958857922 953.4856902282372
 
 line l1 1826.75 571.12 2210.75 595.12
 line l2 1469.5 387.81 2329.5 385.81
