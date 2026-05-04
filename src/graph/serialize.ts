@@ -58,9 +58,15 @@ export interface ConcreteGraph extends GraphLike {
 
 // Quote a label only when it would otherwise tokenise wrong (contains
 // whitespace, a quote, or a backslash). Mirrors quote() in pkg/graph.
+// Newlines round-trip as the escape `\n` since the .flowgo text format
+// is line-based — a literal newline in a quoted value would split the
+// directive across input lines and corrupt parsing.
 export const flowgoQuote = (s: string): string => {
   if (s === "" || /[\s"\\]/.test(s)) {
-    const escaped = s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escaped = s
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, "\\n");
     return `"${escaped}"`;
   }
   return s;

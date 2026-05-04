@@ -335,7 +335,16 @@ func tokenize(line string) []string {
 	for _, r := range line {
 		switch {
 		case escape:
-			cur.WriteRune(r)
+			// `\n` decodes to a newline so multi-line labels round-trip
+			// through the line-based file format. `\\` and `\"` keep
+			// their original meanings; any other escaped rune is
+			// passed through verbatim (back-compat with old files).
+			switch r {
+			case 'n':
+				cur.WriteByte('\n')
+			default:
+				cur.WriteRune(r)
+			}
 			escape = false
 		case r == '\\':
 			escape = true
@@ -371,8 +380,12 @@ func joinEndpoint(id, handle string) string {
 }
 
 func quote(s string) string {
-	if s == "" || strings.ContainsAny(s, " \t\"\\") {
-		r := strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
+	if s == "" || strings.ContainsAny(s, " \t\n\"\\") {
+		r := strings.NewReplacer(
+			"\\", "\\\\",
+			"\"", "\\\"",
+			"\n", "\\n",
+		)
 		return "\"" + r.Replace(s) + "\""
 	}
 	return s

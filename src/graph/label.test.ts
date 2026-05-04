@@ -15,9 +15,37 @@ describe("normalizeLabel", () => {
     });
   });
 
-  it("collapses internal whitespace runs to a single space", () => {
-    expect(normalizeLabel("a   b\tc\n\nd")).toEqual({
-      label: "a b c d",
+  it("collapses internal non-newline whitespace runs to a single space", () => {
+    expect(normalizeLabel("a   b\tc")).toEqual({
+      label: "a b c",
+      truncated: false,
+    });
+  });
+
+  it("preserves explicit newlines as hard line breaks", () => {
+    expect(normalizeLabel("first\nsecond")).toEqual({
+      label: "first\nsecond",
+      truncated: false,
+    });
+  });
+
+  it("trims per-line and keeps interior blank lines", () => {
+    expect(normalizeLabel("  a  \n\n  b  ")).toEqual({
+      label: "a\n\nb",
+      truncated: false,
+    });
+  });
+
+  it("drops fully-blank leading and trailing lines", () => {
+    expect(normalizeLabel("\n\nhi\n\n")).toEqual({
+      label: "hi",
+      truncated: false,
+    });
+  });
+
+  it("normalises CRLF and CR to LF", () => {
+    expect(normalizeLabel("a\r\nb\rc")).toEqual({
+      label: "a\nb\nc",
       truncated: false,
     });
   });
@@ -58,10 +86,10 @@ describe("normalizeLabel", () => {
     expect(normalizeLabel("under cap").truncated).toBe(false);
   });
 
-  it("treats a paste of code-shaped text as a single line", () => {
+  it("preserves multi-line code-shaped paste with per-line trimming", () => {
     const multi = "func main() {\n    fmt.Println(\"hi\")\n}";
     expect(normalizeLabel(multi).label).toBe(
-      'func main() { fmt.Println("hi") }',
+      'func main() {\nfmt.Println("hi")\n}',
     );
   });
 });

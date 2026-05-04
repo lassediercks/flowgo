@@ -21,6 +21,12 @@ describe("flowgoQuote", () => {
     expect(flowgoQuote('say "hi"')).toBe('"say \\"hi\\""');
     expect(flowgoQuote("a\\b")).toBe('"a\\\\b"');
   });
+
+  it("encodes embedded newlines as the `\\n` escape", () => {
+    // The .flowgo format is line-based, so a literal newline in a
+    // quoted value would split the directive across input lines.
+    expect(flowgoQuote("first\nsecond")).toBe('"first\\nsecond"');
+  });
 });
 
 describe("flowgoNum", () => {

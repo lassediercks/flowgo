@@ -9,7 +9,7 @@
 
 import { boxSides } from "../graph/sides.ts";
 import { isHelpOpen, setHelpOpen } from "./help.ts";
-import { isEditing } from "./edit.ts";
+import { isEditing, startEdit, startTextEdit } from "./edit.ts";
 import { undo, redo } from "./persistence.ts";
 import {
   isBrushMode,
@@ -35,6 +35,7 @@ import { toDataX, toDataY } from "./viewport.ts";
 
 interface BoxLike {
   id: string;
+  label: string;
   x: number;
   y: number;
   sides?: number;
@@ -44,6 +45,9 @@ interface BoxLike {
 
 interface TextLike {
   id: string;
+  label: string;
+  x: number;
+  y: number;
   palette?: number;
   font?: number;
 }
@@ -278,6 +282,38 @@ export const attachKeyboardListener = (): void => {
       const dir = e.key === "-" ? -1 : 1;
       if (cycleShape(dir as 1 | -1)) {
         e.preventDefault();
+      }
+      return;
+    }
+
+    // Enter on a single selected box / text item enters edit mode.
+    // Skipped when modifiers are held (Cmd+Enter etc. is reserved for
+    // future shortcuts) or when more than one thing is selected — the
+    // edit UI targets a single label.
+    if (!mod && !e.altKey && !e.shiftKey && e.key === "Enter") {
+      if (w.selected.size !== 1) return;
+      const id = w.selected.values().next().value as string;
+      const map = w.currentMap();
+      const box = map.boxes.find((x) => x.id === id);
+      if (box) {
+        const el = w.canvas.querySelector<HTMLElement>(
+          `.box[data-id="${id}"]`,
+        );
+        if (el) {
+          e.preventDefault();
+          startEdit(el, box);
+        }
+        return;
+      }
+      const text = (map.texts ?? []).find((x) => x.id === id);
+      if (text) {
+        const el = w.canvas.querySelector<HTMLElement>(
+          `.text-item[data-id="${id}"]`,
+        );
+        if (el) {
+          e.preventDefault();
+          startTextEdit(el, text);
+        }
       }
       return;
     }

@@ -13,13 +13,13 @@ func freshGraph() *Graph {
 	return &Graph{Maps: []NamedMap{{Path: "/"}}}
 }
 
-// TestActAddBox_NormalisesLabel covers the regression that motivated
-// this test file: an MCP `add_box` call with a literal newline in the
-// label was stored verbatim and then corrupted the .flowgo file (the
-// line-based parser splits the box directive at the newline).
-//
-// NormalizeLabel collapses every whitespace run to a single space, so
-// the stored label is single-line regardless of what the caller sent.
+// TestActAddBox_NormalisesLabel covers label normalisation through the
+// MCP add_box action: per-line trimming, internal-whitespace collapse,
+// CRLF → LF, and dropping fully-blank leading / trailing lines. Hard
+// newlines (Shift+Enter in the editor) are preserved — they round-trip
+// through the .flowgo file as a `\n` escape and render as visible
+// breaks. Carriage returns still go away because they're never
+// meaningful on their own.
 func TestActAddBox_NormalisesLabel(t *testing.T) {
 	cases := []struct {
 		name string
@@ -29,8 +29,12 @@ func TestActAddBox_NormalisesLabel(t *testing.T) {
 		{"plain", "hello", "hello"},
 		{"trims_outer_whitespace", "  hello  ", "hello"},
 		{"collapses_internal_runs", "a   b\tc", "a b c"},
-		{"strips_newlines", "run-opencode.sh\nEntry Point", "run-opencode.sh Entry Point"},
-		{"strips_carriage_return", "a\r\nb", "a b"},
+		{"preserves_newlines", "run-opencode.sh\nEntry Point", "run-opencode.sh\nEntry Point"},
+		{"normalises_crlf_to_lf", "a\r\nb", "a\nb"},
+		{"normalises_bare_cr", "a\rb", "a\nb"},
+		{"trims_per_line", "  a  \n  b  ", "a\nb"},
+		{"keeps_interior_blank_line", "a\n\nb", "a\n\nb"},
+		{"drops_leading_trailing_blanks", "\n\nhi\n\n", "hi"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,8 +54,8 @@ func TestActAddBox_NormalisesLabel(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("label mismatch:\n  got  %q\n  want %q", got, tc.want)
 			}
-			if strings.ContainsAny(got, "\r\n") {
-				t.Fatalf("normalised label still contains a newline: %q", got)
+			if strings.ContainsRune(got, '\r') {
+				t.Fatalf("normalised label still contains a carriage return: %q", got)
 			}
 		})
 	}
@@ -142,15 +146,17 @@ func TestActUpdateBox_NormalisesLabel(t *testing.T) {
 		t.Fatalf("actAddBox: %v", err)
 	}
 	rawID := mcpFirstText(id)
+	// Per-line trim + interior \n preserved (Shift+Enter line breaks
+	// round-trip through update_box).
 	_, err = actUpdateBox(g, map[string]any{
 		"id":    rawID,
-		"label": "line one\nline two",
+		"label": "  line one  \n  line two  ",
 	})
 	if err != nil {
 		t.Fatalf("actUpdateBox: %v", err)
 	}
 	got := g.Maps[0].Boxes[0].Label
-	if got != "line one line two" {
+	if got != "line one\nline two" {
 		t.Fatalf("update label mismatch: %q", got)
 	}
 }
@@ -166,8 +172,13 @@ func TestActAddText_NormalisesLabel(t *testing.T) {
 		t.Fatalf("actAddText: %v", err)
 	}
 	got := g.Maps[0].Texts[0].Label
-	if strings.ContainsAny(got, "\r\n") {
-		t.Fatalf("text label not normalised: %q", got)
+	// Newlines now persist (rendered as hard breaks); only carriage
+	// returns are stripped (normalised to LF first).
+	if got != "first\nsecond" {
+		t.Fatalf("text label mismatch: %q", got)
+	}
+	if strings.ContainsRune(got, '\r') {
+		t.Fatalf("text label still contains a carriage return: %q", got)
 	}
 }
 

@@ -9,7 +9,7 @@
 // to capture pasted content the browser sometimes lands as siblings
 // of that span.
 
-import { MAX_LABEL_LEN } from "../graph/label.ts";
+import { MAX_LABEL_LEN, normalizeLabel } from "../graph/label.ts";
 
 interface BoxLike {
   id: string;
@@ -55,8 +55,18 @@ export const wireEdit = (b: EditBindings): void => {
 let editing: HTMLElement | null = null;
 export const isEditing = (): boolean => editing !== null;
 
-const normalize = (raw: string): string =>
-  raw.replace(/\s+/g, " ").trim();
+// readEditableText reads the current contenteditable contents preserving
+// Shift+Enter line breaks. innerText is the right tool here: it walks
+// the rendered text tree and emits `\n` for `<br>` and block boundaries
+// the browser inserts on Shift+Enter (whereas textContent would drop
+// them silently and we'd lose every break the user typed).
+const readEditableText = (el: HTMLElement): string => {
+  const t = el.innerText ?? el.textContent ?? "";
+  // Some browsers emit a stray trailing newline from a final `<br>` the
+  // contenteditable inserts as a caret anchor — normalizeLabel trims it
+  // anyway, but we route everything through it for consistency.
+  return normalizeLabel(t, { maxLength: MAX_LABEL_LEN }).label;
+};
 
 export const startTextEdit = (el: HTMLElement, t: TextLike): void => {
   if (editing) return;
@@ -75,7 +85,7 @@ export const startTextEdit = (el: HTMLElement, t: TextLike): void => {
     el.removeEventListener("keydown", onKey);
     el.contentEditable = "false";
     editing = null;
-    const newLabel = normalize(el.textContent ?? "");
+    const newLabel = readEditableText(el);
     if (commit && newLabel && newLabel !== t.label) {
       t.label = newLabel;
       must().scheduleSave();
@@ -85,6 +95,9 @@ export const startTextEdit = (el: HTMLElement, t: TextLike): void => {
   const onBlur = (): void => finish(true);
   const onKey = (ev: KeyboardEvent): void => {
     if (ev.key === "Enter" && !ev.shiftKey) {
+      // Bare Enter ends editing. Shift+Enter falls through so the
+      // browser inserts a line break naturally — readEditableText
+      // picks it up via innerText on commit.
       ev.preventDefault();
       el.blur();
     } else if (ev.key === "Escape") {
@@ -138,13 +151,15 @@ export const startEdit = (
     // Read from el, not labelEl: contenteditable can land pasted
     // text in sibling text nodes / divs directly under el (outside
     // the span). The SVG polygon and handle divs contribute no text
-    // content, so el.textContent is just the label across whichever
-    // children the browser used.
-    let newLabel = normalize(el.textContent ?? "");
-    if (newLabel.length > MAX_LABEL_LEN) {
-      newLabel = newLabel.slice(0, MAX_LABEL_LEN);
+    // content, so el.innerText is just the label across whichever
+    // children the browser used — and innerText preserves Shift+Enter
+    // breaks that textContent would silently drop.
+    const before = el.innerText ?? el.textContent ?? "";
+    const norm = normalizeLabel(before, { maxLength: MAX_LABEL_LEN });
+    if (norm.truncated) {
       must().setStatus("label truncated to " + MAX_LABEL_LEN + " characters");
     }
+    const newLabel = norm.label;
     if (!commit && cancelDeletes) {
       const w = must();
       // Roll back: drop the just-spawned box and any of its edges.
@@ -182,6 +197,9 @@ export const startEdit = (
   const onBlur = (): void => finish(true);
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Enter" && !e.shiftKey) {
+      // Bare Enter ends editing. Shift+Enter falls through so the
+      // browser inserts a line break naturally — finish() reads it
+      // back via innerText on commit.
       e.preventDefault();
       el.blur();
     } else if (e.key === "Escape") {
