@@ -181,7 +181,6 @@
   .box.has-submap.dragging { box-shadow: 6px 6px 0 0 #222, 0 4px 10px rgba(0,0,0,.2); }
   .box.shaped.has-submap { box-shadow: none; }
   .box.shaped.has-submap > .shape-svg { filter: drop-shadow(4px 4px 0 #222); }
-  .box.selected { border-color: #07f; }
   .box.drop-target { border-color: #2a7; box-shadow: 0 0 0 3px rgba(34,170,119,.35); }
   .box[contenteditable="true"] { cursor: text; user-select: text; outline: none; background: #ffffe0; }
   /* iOS Safari auto-zooms any focused editable whose computed
@@ -209,7 +208,6 @@
     pointer-events: none; overflow: visible; z-index: -1;
   }
   .box.shaped .shape-poly { fill: #fff; stroke: #333; stroke-width: 2; }
-  .box.shaped.selected .shape-poly { stroke: #07f; }
   .box.shaped.drop-target .shape-poly { stroke: #2a7; stroke-width: 4; }
   .box.shaped[contenteditable="true"] .shape-poly { fill: #ffffe0; }
 
@@ -231,6 +229,34 @@
   .box.shaped.palette-8 .shape-poly { fill: #ddd6fe; stroke: #6d28d9; }
   .box.shaped.palette-9 .shape-poly { fill: #e5e7eb; stroke: #374151; }
   .box.shaped[class*="palette-"] { background: transparent; }
+
+  /* Selected highlights live below the palette block so the cascade
+     wins against same-specificity .box.palette-N border/stroke rules
+     above. The two-tone halo (white inner, blue outer) is the
+     load-bearing cue — border-colour alone is invisible on palette-7
+     (the box is already blue), and a single-colour halo can blend
+     into either the canvas (light) or palette-2 (dark). The white
+     stripe always separates the blue ring from the box edge. */
+  .box.selected {
+    border-color: #07f;
+    outline: 3px solid #07f;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 3px #fff;
+  }
+  .box.has-submap.selected {
+    box-shadow: 0 0 0 3px #fff, 4px 4px 0 0 #222;
+  }
+  .box.shaped.selected { outline: none; box-shadow: none; }
+  .box.shaped.selected .shape-poly {
+    stroke: #07f;
+    stroke-width: 4;
+  }
+  .box.shaped.selected > .shape-svg {
+    filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px #07f);
+  }
+  .box.shaped.has-submap.selected > .shape-svg {
+    filter: drop-shadow(4px 4px 0 #222) drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px #07f);
+  }
 
   /* Font-size scale: 1 = default (14px). 2-9 step monotonically larger. */
   .box.font-2 { font-size: 16px; }
