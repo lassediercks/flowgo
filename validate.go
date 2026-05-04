@@ -90,8 +90,11 @@ func validateMap(m NamedMap) []error {
 		if len(b.Label) > MaxLabelLen {
 			errs = append(errs, fmt.Errorf("map %q: box %q label is %d chars (cap is %d)", m.Path, b.ID, len(b.Label), MaxLabelLen))
 		}
-		if strings.ContainsAny(b.Label, "\r\n") {
-			errs = append(errs, fmt.Errorf("map %q: box %q label contains a newline (the .flowgo line-based format breaks on a literal newline)", m.Path, b.ID))
+		// `\n` round-trips through the line-based format via the
+		// quote()/tokenize() escape pair, so multi-line labels are
+		// allowed. `\r` has no escape and would corrupt the file.
+		if strings.ContainsRune(b.Label, '\r') {
+			errs = append(errs, fmt.Errorf("map %q: box %q label contains a carriage return (no escape exists for \\r in the .flowgo format)", m.Path, b.ID))
 		}
 	}
 
@@ -132,8 +135,8 @@ func validateMap(m NamedMap) []error {
 		if len(t.Label) > MaxLabelLen {
 			errs = append(errs, fmt.Errorf("map %q: text %q label is %d chars (cap is %d)", m.Path, t.ID, len(t.Label), MaxLabelLen))
 		}
-		if strings.ContainsAny(t.Label, "\r\n") {
-			errs = append(errs, fmt.Errorf("map %q: text %q label contains a newline (the .flowgo line-based format breaks on a literal newline)", m.Path, t.ID))
+		if strings.ContainsRune(t.Label, '\r') {
+			errs = append(errs, fmt.Errorf("map %q: text %q label contains a carriage return (no escape exists for \\r in the .flowgo format)", m.Path, t.ID))
 		}
 	}
 	for i, l := range m.Lines {
