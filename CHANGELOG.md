@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.21](https://github.com/lassediercks/flowgo/compare/v0.0.20...v0.0.21) (2026-05-04)
+
+
+### Bug Fixes
+
+* make current selected boxes obvious ([75732bc](https://github.com/lassediercks/flowgo/commit/75732bc54a751dc9d916fa57e1804c6ae0ab9f90))
+* type and update readme ([312d25e](https://github.com/lassediercks/flowgo/commit/312d25ece3cf4399b6ede2e28e50726cdb71e910))
+
 ## [0.0.20](https://github.com/lassediercks/flowgo/compare/v0.0.19...v0.0.20) (2026-05-04)
 
 
