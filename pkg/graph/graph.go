@@ -11,7 +11,6 @@ package graph
 import (
 	"bufio"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -71,7 +70,7 @@ type Edge struct {
 	// Persisted as the FIFTH positional token on the `edge` line,
 	// after the palette: `edge <from> <to> <palette> <label>`. It has
 	// to go after, not before: slot 4 has been the optional palette
-	// since the format existed, and Parse reads it with strconv.Atoi,
+	// since the format existed, and Parse reads it as an integer,
 	// so a label there would either be misread as a palette (label
 	// "3") or hard-error every existing reader. A label therefore
 	// forces a palette token to be emitted; when the edge has no
@@ -180,6 +179,26 @@ type Graph struct {
 // dropped, so a downstream package init that depends on Parse fails
 // loudly when the format gains a new directive.
 func Parse(s string) (Graph, error) {
+	// A leading UTF-8 BOM is stripped rather than rejected: it's a
+	// harmless artifact some editors/tools prepend, not structure, and
+	// src/graph/parse.ts already tolerates it (JS's String.trim()
+	// treats U+FEFF as whitespace, so it silently vanishes from the
+	// first line there). Erroring on it here just for a byte JS
+	// already ignores would make the same file open in the browser and
+	// fail in the Go binary.
+	s = strings.TrimPrefix(s, "\uFEFF")
+	// Normalize every line ending the same way src/graph/parse.ts's
+	// `text.split(/\r\n|\r|\n/)` does, including a lone `\r` with no
+	// following `\n` as its own line break. bufio.Scanner's default
+	// split (ScanLines) only recognizes `\n` (stripping an immediately
+	// preceding `\r`), so a bare `\r` used to stay embedded inside a
+	// token instead of ending the line — the two parsers disagreed
+	// about where one directive ended and the next began for the same
+	// bytes. `\r\n` is folded first so a CRLF collapses to one newline
+	// rather than two.
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+
 	var g Graph
 	findOrCreate := func(path string) int {
 		for i, m := range g.Maps {
@@ -193,6 +212,19 @@ func Parse(s string) (Graph, error) {
 	cur := findOrCreate("/")
 
 	sc := bufio.NewScanner(strings.NewReader(s))
+	// bufio.Scanner defaults to a 64KiB max token (line) size with no
+	// Buffer() call. That's reachable in practice — a single `stroke`
+	// directive with enough freehand points, or a `line` with enough
+	// mids, easily clears 64KiB — and the failure mode was bad on two
+	// counts: sc.Err() returns bufio.ErrTooLong with no line number,
+	// and every directive read before the oversized line stayed in g,
+	// so the caller got a silently truncated graph back alongside the
+	// error instead of nothing. raise the ceiling far past anything a
+	// real map produces (src/graph/parse.ts, which this must match
+	// byte-for-byte, has no line-length limit at all) and, below, turn
+	// any remaining scan error into an atomic failure with a line
+	// number instead of a partial graph.
+	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	lineNo := 0
 	for sc.Scan() {
 		lineNo++
@@ -252,7 +284,7 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 2 {
 				return g, fmt.Errorf("line %d: defaultshape needs a value", lineNo)
 			}
-			shapeVal, err := strconv.Atoi(toks[1])
+			shapeVal, err := parseIntStrict(toks[1])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad defaultshape: %v", lineNo, err)
 			}
@@ -272,11 +304,11 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 5 {
 				return g, fmt.Errorf("line %d: %s needs id label x y", lineNo, toks[0])
 			}
-			x, err := strconv.ParseFloat(toks[3], 64)
+			x, err := parseFloatStrict(toks[3])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad x: %v", lineNo, err)
 			}
-			y, err := strconv.ParseFloat(toks[4], 64)
+			y, err := parseFloatStrict(toks[4])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad y: %v", lineNo, err)
 			}
@@ -285,12 +317,12 @@ func Parse(s string) (Graph, error) {
 			// it's numeric (so corrupted files fail loudly) but discard
 			// the value — polygons aren't a feature anymore.
 			if len(toks) >= 6 {
-				if _, err := strconv.Atoi(toks[5]); err != nil {
+				if _, err := parseIntStrict(toks[5]); err != nil {
 					return g, fmt.Errorf("line %d: bad sides: %v", lineNo, err)
 				}
 			}
 			if len(toks) >= 7 {
-				palette, err := strconv.Atoi(toks[6])
+				palette, err := parseIntStrict(toks[6])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad palette: %v", lineNo, err)
 				}
@@ -299,7 +331,7 @@ func Parse(s string) (Graph, error) {
 				}
 			}
 			if len(toks) >= 8 {
-				font, err := strconv.Atoi(toks[7])
+				font, err := parseIntStrict(toks[7])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad font: %v", lineNo, err)
 				}
@@ -310,7 +342,7 @@ func Parse(s string) (Graph, error) {
 			// toks[8] is the vestigial "rotation" slot from polygon
 			// support. Validate-and-discard for the same reason as sides.
 			if len(toks) >= 9 {
-				if _, err := strconv.Atoi(toks[8]); err != nil {
+				if _, err := parseIntStrict(toks[8]); err != nil {
 					return g, fmt.Errorf("line %d: bad rotation: %v", lineNo, err)
 				}
 			}
@@ -323,7 +355,7 @@ func Parse(s string) (Graph, error) {
 			toID, toH := splitEndpoint(toks[2])
 			edge := Edge{From: fromID, FromHandle: fromH, To: toID, ToHandle: toH}
 			if len(toks) >= 4 {
-				palette, err := strconv.Atoi(toks[3])
+				palette, err := parseIntStrict(toks[3])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad edge palette: %v", lineNo, err)
 				}
@@ -343,17 +375,17 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 5 {
 				return g, fmt.Errorf("line %d: text needs id label x y", lineNo)
 			}
-			x, err := strconv.ParseFloat(toks[3], 64)
+			x, err := parseFloatStrict(toks[3])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad x: %v", lineNo, err)
 			}
-			y, err := strconv.ParseFloat(toks[4], 64)
+			y, err := parseFloatStrict(toks[4])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad y: %v", lineNo, err)
 			}
 			t := Text{ID: toks[1], Label: toks[2], X: x, Y: y}
 			if len(toks) >= 6 {
-				palette, err := strconv.Atoi(toks[5])
+				palette, err := parseIntStrict(toks[5])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad text palette: %v", lineNo, err)
 				}
@@ -362,7 +394,7 @@ func Parse(s string) (Graph, error) {
 				}
 			}
 			if len(toks) >= 7 {
-				font, err := strconv.Atoi(toks[6])
+				font, err := parseIntStrict(toks[6])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad text font: %v", lineNo, err)
 				}
@@ -377,7 +409,7 @@ func Parse(s string) (Graph, error) {
 			}
 			coords := make([]float64, 4)
 			for i, t := range toks[2:6] {
-				v, err := strconv.ParseFloat(t, 64)
+				v, err := parseFloatStrict(t)
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad coord: %v", lineNo, err)
 				}
@@ -385,7 +417,7 @@ func Parse(s string) (Graph, error) {
 			}
 			ln := Line{ID: toks[1], X1: coords[0], Y1: coords[1], X2: coords[2], Y2: coords[3]}
 			if len(toks) >= 7 {
-				palette, err := strconv.Atoi(toks[6])
+				palette, err := parseIntStrict(toks[6])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad line palette: %v", lineNo, err)
 				}
@@ -402,11 +434,11 @@ func Parse(s string) (Graph, error) {
 					return g, fmt.Errorf("line %d: line mids need pairs of coords", lineNo)
 				}
 				for i := 7; i < len(toks); i += 2 {
-					mx, err := strconv.ParseFloat(toks[i], 64)
+					mx, err := parseFloatStrict(toks[i])
 					if err != nil {
 						return g, fmt.Errorf("line %d: bad line mid x: %v", lineNo, err)
 					}
-					my, err := strconv.ParseFloat(toks[i+1], 64)
+					my, err := parseFloatStrict(toks[i+1])
 					if err != nil {
 						return g, fmt.Errorf("line %d: bad line mid y: %v", lineNo, err)
 					}
@@ -418,7 +450,7 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 3 {
 				return g, fmt.Errorf("line %d: linestyle needs id and style", lineNo)
 			}
-			styleVal, err := strconv.Atoi(toks[2])
+			styleVal, err := parseIntStrict(toks[2])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad linestyle: %v", lineNo, err)
 			}
@@ -444,11 +476,11 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 4 {
 				return g, fmt.Errorf("line %d: %s needs id, width, and height", lineNo, toks[0])
 			}
-			bw, err := strconv.ParseFloat(toks[2], 64)
+			bw, err := parseFloatStrict(toks[2])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad %s width: %v", lineNo, toks[0], err)
 			}
-			bh, err := strconv.ParseFloat(toks[3], 64)
+			bh, err := parseFloatStrict(toks[3])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad %s height: %v", lineNo, toks[0], err)
 			}
@@ -475,7 +507,7 @@ func Parse(s string) (Graph, error) {
 			if len(toks) < 3 {
 				return g, fmt.Errorf("line %d: %s needs id and shape", lineNo, toks[0])
 			}
-			shapeVal, err := strconv.Atoi(toks[2])
+			shapeVal, err := parseIntStrict(toks[2])
 			if err != nil {
 				return g, fmt.Errorf("line %d: bad %s: %v", lineNo, toks[0], err)
 			}
@@ -523,7 +555,7 @@ func Parse(s string) (Graph, error) {
 			pointStart := 2
 			palette := 0
 			if !strings.ContainsRune(toks[2], ',') {
-				p, err := strconv.Atoi(toks[2])
+				p, err := parseIntStrict(toks[2])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad stroke palette: %v", lineNo, err)
 				}
@@ -539,11 +571,11 @@ func Parse(s string) (Graph, error) {
 				if len(parts) != 2 {
 					return g, fmt.Errorf("line %d: bad stroke point %q", lineNo, pair)
 				}
-				px, err := strconv.ParseFloat(parts[0], 64)
+				px, err := parseFloatStrict(parts[0])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad stroke x: %v", lineNo, err)
 				}
-				py, err := strconv.ParseFloat(parts[1], 64)
+				py, err := parseFloatStrict(parts[1])
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad stroke y: %v", lineNo, err)
 				}
@@ -556,7 +588,7 @@ func Parse(s string) (Graph, error) {
 			}
 			coords := make([]float64, 4)
 			for i, t := range toks[3:7] {
-				v, err := strconv.ParseFloat(t, 64)
+				v, err := parseFloatStrict(t)
 				if err != nil {
 					return g, fmt.Errorf("line %d: bad image coord: %v", lineNo, err)
 				}
@@ -574,7 +606,14 @@ func Parse(s string) (Graph, error) {
 			return g, fmt.Errorf("line %d: unknown directive %q", lineNo, toks[0])
 		}
 	}
-	return g, sc.Err()
+	if err := sc.Err(); err != nil {
+		// Atomic failure: never hand back a graph that silently dropped
+		// everything from the oversized/unreadable line onward. lineNo
+		// is the count of lines successfully scanned before the error,
+		// so the failing line is the next one.
+		return Graph{}, fmt.Errorf("line %d: %w", lineNo+1, err)
+	}
+	return g, nil
 }
 
 // Serialize emits the .flowgo text format. Empty maps are dropped —
@@ -586,7 +625,13 @@ func Parse(s string) (Graph, error) {
 func Serialize(g Graph) string {
 	var b strings.Builder
 	if g.Version != "" {
-		fmt.Fprintf(&b, "version %s\n", g.Version)
+		// Quoted like any other free-text value: an unquoted version
+		// containing a space (or any other tokenizer-significant
+		// character) would split into extra tokens on the way back in,
+		// silently truncating Graph.Version to its first word. quote()
+		// is a no-op for the common case (a bare semver string), so
+		// every existing file's first line is untouched.
+		fmt.Fprintf(&b, "version %s\n", quote(g.Version))
 	}
 	// Document default shape: emitted only when set, directly after
 	// version (the slot the legacy `hexagons on` used to occupy).
@@ -652,7 +697,7 @@ func Serialize(g Graph) string {
 		for _, box := range m.Boxes {
 			emitPalette := box.Palette >= 2 && box.Palette <= 9
 			emitFont := box.Font >= 2 && box.Font <= 9
-			fmt.Fprintf(&b, "node %s %s %g %g", quoteID(box.ID), quote(box.Label), box.X, box.Y)
+			fmt.Fprintf(&b, "node %s %s %s %s", quoteID(box.ID), quote(box.Label), jsNumberString(box.X), jsNumberString(box.Y))
 			// The "4" placeholder fills the vestigial sides slot when
 			// palette/font follow, so old files like `box b1 hi 0 0 4 5`
 			// round-trip positionally.
@@ -677,7 +722,7 @@ func Serialize(g Graph) string {
 		// with src/graph/serialize.ts — keep the two in sync.
 		for _, box := range m.Boxes {
 			if box.W > 0 && box.H > 0 {
-				fmt.Fprintf(&b, "nodesize %s %g %g\n", quoteID(box.ID), box.W, box.H)
+				fmt.Fprintf(&b, "nodesize %s %s %s\n", quoteID(box.ID), jsNumberString(box.W), jsNumberString(box.H))
 			}
 		}
 		for _, box := range m.Boxes {
@@ -726,7 +771,7 @@ func Serialize(g Graph) string {
 			if id == "" {
 				id = fallbackID("t")
 			}
-			fmt.Fprintf(&b, "text %s %s %g %g", quoteID(id), quote(t.Label), t.X, t.Y)
+			fmt.Fprintf(&b, "text %s %s %s %s", quoteID(id), quote(t.Label), jsNumberString(t.X), jsNumberString(t.Y))
 			if emitTPalette || emitTFont {
 				palette := t.Palette
 				if !emitTPalette {
@@ -747,7 +792,7 @@ func Serialize(g Graph) string {
 			if id == "" {
 				id = fallbackID("l")
 			}
-			fmt.Fprintf(&b, "line %s %g %g %g %g", quoteID(id), l.X1, l.Y1, l.X2, l.Y2)
+			fmt.Fprintf(&b, "line %s %s %s %s %s", quoteID(id), jsNumberString(l.X1), jsNumberString(l.Y1), jsNumberString(l.X2), jsNumberString(l.Y2))
 			hasPal := l.Palette >= 2 && l.Palette <= 9
 			if hasPal || len(l.Mids) > 0 {
 				palTok := 1
@@ -760,7 +805,7 @@ func Serialize(g Graph) string {
 				if len(m) < 2 {
 					continue
 				}
-				fmt.Fprintf(&b, " %g %g", m[0], m[1])
+				fmt.Fprintf(&b, " %s %s", jsNumberString(m[0]), jsNumberString(m[1]))
 			}
 			b.WriteString("\n")
 		}
@@ -790,7 +835,7 @@ func Serialize(g Graph) string {
 				if len(p) < 2 {
 					continue
 				}
-				fmt.Fprintf(&b, " %g,%g", p[0], p[1])
+				fmt.Fprintf(&b, " %s,%s", jsNumberString(p[0]), jsNumberString(p[1]))
 			}
 			b.WriteString("\n")
 		}
@@ -802,7 +847,7 @@ func Serialize(g Graph) string {
 			if id == "" {
 				id = fallbackID("img")
 			}
-			fmt.Fprintf(&b, "image %s %s %g %g %g %g", quoteID(id), quote(img.Src), img.X, img.Y, img.Width, img.Height)
+			fmt.Fprintf(&b, "image %s %s %s %s %s %s", quoteID(id), quote(img.Src), jsNumberString(img.X), jsNumberString(img.Y), jsNumberString(img.Width), jsNumberString(img.Height))
 			b.WriteString("\n")
 		}
 	}
