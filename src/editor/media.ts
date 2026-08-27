@@ -8,11 +8,18 @@
 // Local (CLI) mode only: in shared-snapshot mode (/m/<id>) there's no
 // filesystem to write to, so paste/drop are announced as unavailable
 // and make no network call.
+//
+// Also gated on IMAGES_ENABLED (features.ts): embedders with no /media
+// route behind them (flowgo-website) turn this off via `?images=0`.
+// Disabled means the handlers no-op — no POST is ever attempted, and
+// pasting still falls through to the internal clipboard buffer so
+// Cmd/Ctrl+V for boxes/texts/lines keeps working.
 
 import { toDataX, toDataY } from "./viewport.ts";
 import { mutatedImage } from "./mutations.ts";
 import { SNAPSHOT_MODE } from "./persistence.ts";
 import { pasteSelection } from "./clipboard.ts";
+import { IMAGES_ENABLED } from "./features.ts";
 
 interface ImageItem {
   id: string;
@@ -192,9 +199,15 @@ const onPaste = (e: ClipboardEvent): void => {
   if (target && target.isContentEditable) return;
   const cd = e.clipboardData;
   // Prefer items (works for screenshots + copied images); fall back to
-  // clipboardData.files for browsers that populate only that.
-  let blobs = imageBlobsFromItems(cd?.items);
-  if (blobs.length === 0) blobs = imageBlobsFromFiles(cd?.files);
+  // clipboardData.files for browsers that populate only that. When
+  // images are disabled, skip extraction entirely — an image on the
+  // clipboard falls through to pasteSelection() below exactly like no
+  // image was there, instead of being uploaded.
+  let blobs: Blob[] = [];
+  if (IMAGES_ENABLED) {
+    blobs = imageBlobsFromItems(cd?.items);
+    if (blobs.length === 0) blobs = imageBlobsFromFiles(cd?.files);
+  }
   e.preventDefault();
   if (blobs.length === 0) {
     // No image on the OS clipboard → paste flowgo's internal buffer
@@ -225,6 +238,7 @@ const onDrop = (e: DragEvent): void => {
   // Stop the browser from navigating to the dropped file, whether or
   // not it turns out to be an image we handle.
   e.preventDefault();
+  if (!IMAGES_ENABLED) return;
   const blobs = imageBlobsFromFiles(e.dataTransfer?.files);
   if (blobs.length === 0) return;
   const cx = toDataX(e.clientX);

@@ -3,6 +3,11 @@
 // The keyboard handler in main.ts asks `isHelpOpen()` to decide whether
 // Escape should close the overlay vs. clear the selection.
 //
+// IMAGES_ENABLED (features.ts) additionally strips the "paste an
+// image" row out of the DOM entirely when this embedder has no image
+// storage behind it — not hidden via CSS, removed, so it can never be
+// advertised as a capability that silently fails.
+//
 // TOUCH NOTE (brain#257). Every other chrome control in this editor
 // activates on `pointerup` with a guarded `click` fallback, because
 // iOS Safari's synthetic click is unreliable under the document-level
@@ -12,6 +17,8 @@
 // dismisses on `pointerdown` rather than `mousedown` for the same
 // reason: pointer events are delivered natively for touch and don't
 // depend on the mouse-event synthesis at all.
+
+import { IMAGES_ENABLED } from "./features.ts";
 
 const overlay = (): HTMLElement => {
   const el = document.getElementById("helpOverlay");
@@ -64,4 +71,5 @@ export const attachHelpListeners = (): void => {
   overlay().addEventListener("pointerdown", (e) => {
     if (e.target === overlay()) setHelpOpen(false);
   });
+  if (!IMAGES_ENABLED) document.getElementById("helpImageRow")?.remove();
 };

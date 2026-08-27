@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   snapshot: { value: false },
+  imagesEnabled: { value: true },
   mutatedImage: vi.fn(),
   pasteSelection: vi.fn(),
 }));
@@ -38,6 +39,11 @@ vi.mock("./persistence.ts", () => ({
 }));
 vi.mock("./mutations.ts", () => ({ mutatedImage: mocks.mutatedImage }));
 vi.mock("./clipboard.ts", () => ({ pasteSelection: mocks.pasteSelection }));
+vi.mock("./features.ts", () => ({
+  get IMAGES_ENABLED() {
+    return mocks.imagesEnabled.value;
+  },
+}));
 
 import {
   attachMediaListeners,
@@ -171,6 +177,7 @@ attachMediaListeners();
 
 beforeEach(() => {
   mocks.snapshot.value = false;
+  mocks.imagesEnabled.value = true;
   mocks.mutatedImage.mockReset();
   mocks.pasteSelection.mockReset();
 
@@ -461,6 +468,47 @@ describe("snapshot (shared-view) mode", () => {
     expect(status).toEqual(["image paste unavailable in shared view"]);
     expect(map.images).toBeUndefined();
     expect(mocks.mutatedImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("IMAGES_ENABLED = false (embedder has no /media route)", () => {
+  // flowgo-website sets ?images=0 on the /editor iframe src (no image
+  // storage wired up server-side yet) — features.ts turns that into
+  // IMAGES_ENABLED=false. The handler must no-op rather than let the
+  // upload 404: no fetch, nothing added, no status noise.
+  it("a pasted image makes NO network call and adds nothing", async () => {
+    mocks.imagesEnabled.value = false;
+    dispatchPaste({ items: arrayLike(fileItem(png())) });
+    await flush();
+    expect(fetchCalls).toHaveLength(0);
+    expect(status).toEqual([]);
+    expect(map.images).toBeUndefined();
+    expect(mocks.mutatedImage).not.toHaveBeenCalled();
+  });
+
+  it("a pasted image still falls through to the internal clipboard buffer", async () => {
+    // The paste handler must not eat Cmd/Ctrl+V for boxes/texts/lines
+    // just because an image happened to also be on the OS clipboard —
+    // it should behave exactly as if no image were there.
+    mocks.imagesEnabled.value = false;
+    dispatchPaste({ items: arrayLike(fileItem(png())) });
+    await flush();
+    expect(mocks.pasteSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("a dropped image makes NO network call and adds nothing", async () => {
+    mocks.imagesEnabled.value = false;
+    dispatchDrop({ files: arrayLike(png()) }, 150, 120);
+    await flush();
+    expect(fetchCalls).toHaveLength(0);
+    expect(map.images).toBeUndefined();
+    expect(mocks.mutatedImage).not.toHaveBeenCalled();
+  });
+
+  it("dragover still preventDefaults so the browser doesn't navigate to the file", () => {
+    mocks.imagesEnabled.value = false;
+    const e = dispatchDragOver();
+    expect(e.defaultPrevented).toBe(true);
   });
 });
 

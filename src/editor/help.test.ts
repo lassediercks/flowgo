@@ -8,7 +8,15 @@
 // two" latch that keeps a pointerup and its trailing click from
 // cancelling each other out.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ imagesEnabled: { value: true } }));
+vi.mock("./features.ts", () => ({
+  get IMAGES_ENABLED() {
+    return mocks.imagesEnabled.value;
+  },
+}));
+
 import { attachHelpListeners, isHelpOpen, setHelpOpen } from "./help.ts";
 
 const OVERLAY = `
@@ -16,6 +24,7 @@ const OVERLAY = `
   <div id="helpModal">
     <button id="helpClose"><svg id="closeIcon"></svg></button>
     <div class="help-coarse"><p id="helpText">gestures</p></div>
+    <table><tr id="helpImageRow"><td>paste an image</td></tr></table>
   </div>
 </div>
 <button id="helpBtn"></button>`;
@@ -36,8 +45,26 @@ const tap = (el: Element): void => {
 };
 
 beforeEach(() => {
+  mocks.imagesEnabled.value = true;
   document.body.innerHTML = OVERLAY;
   attachHelpListeners();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("image row (brain#imagesEnabled)", () => {
+  it("stays in the DOM when images are enabled", () => {
+    expect(document.getElementById("helpImageRow")).not.toBeNull();
+  });
+
+  it("is removed from the DOM when images are disabled", () => {
+    mocks.imagesEnabled.value = false;
+    document.body.innerHTML = OVERLAY;
+    attachHelpListeners();
+    expect(document.getElementById("helpImageRow")).toBeNull();
+  });
 });
 
 describe("opening and closing", () => {
